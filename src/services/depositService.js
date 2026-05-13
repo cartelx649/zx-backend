@@ -72,4 +72,4 @@ async function verifyAndRecordDeposit({ userId, txHash, amount }) {
   });
 }
 
-module.exports = { verifyAndRecordDeposit };
+module.exports = { verifyAndRecordDeposit, resolveRoiSlab };

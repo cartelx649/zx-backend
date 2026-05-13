@@ -17,6 +17,7 @@ const env = {
   payoutWallet: (process.env.PAYOUT_WALLET || '').toLowerCase(),
   payoutPrivateKey: process.env.PAYOUT_PRIVATE_KEY,
   chainConfirmations: Number(process.env.CHAIN_CONFIRMATIONS || 8),
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 };
 
 module.exports = env;
