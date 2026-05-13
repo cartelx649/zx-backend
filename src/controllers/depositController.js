@@ -5,6 +5,9 @@ const { verifyAndRecordDeposit } = require('../services/depositService');
 const depositSchema = Joi.object({
   txHash: Joi.string().required(),
   amount: Joi.number().positive().required(),
+  sponsorWalletAddress: Joi.string()
+    .pattern(/^0x[a-fA-F0-9]{40}$/)
+    .required(),
 });
 
 const verifyDeposit = asyncHandler(async (req, res) => {

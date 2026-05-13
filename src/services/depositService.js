@@ -12,9 +12,20 @@ function resolveRoiSlab(amount, roiSlabs) {
   return roiSlabs.find((slab) => amount >= slab.min && (slab.max === null || amount <= slab.max));
 }
 
-async function verifyAndRecordDeposit({ userId, txHash, amount }) {
+async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAddress }) {
   const user = await User.findById(userId);
   if (!user) throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+
+  if (!user.sponsorWalletAddress) {
+    const incomingSponsor = sponsorWalletAddress.toLowerCase();
+    const sponsorUser = await User.findOne({ walletAddress: incomingSponsor });
+    if (!sponsorUser) {
+      throw new ApiError(400, 'Sponsor wallet not registered', 'INVALID_SPONSOR');
+    }
+    user.sponsorWalletAddress = incomingSponsor;
+    await user.save();
+  }
+
   const config = await getConfig();
   if (config.emergencyPause) {
     throw new ApiError(423, 'Platform is temporarily paused', 'EMERGENCY_PAUSE_ENABLED');
