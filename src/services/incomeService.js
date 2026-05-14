@@ -44,25 +44,35 @@ async function creditDirectCommission({ sourceUser, sponsorUser, sourceCycleId, 
 
 async function creditOverrideOnRoi({ roiBeneficiaryUser, roiAmount, session }) {
   const config = await getConfig();
+  const visited = new Set([roiBeneficiaryUser.walletAddress]);
   let currentSponsorWallet = roiBeneficiaryUser.sponsorWalletAddress;
   for (let level = 1; level <= MAX_OVERRIDE_LEVELS && currentSponsorWallet; level += 1) {
+    if (visited.has(currentSponsorWallet)) {
+      console.warn(
+        `[override] Cycle detected for user ${roiBeneficiaryUser._id} ` +
+          `(wallet ${currentSponsorWallet}) — stopping chain at level ${level}`
+      );
+      break;
+    }
+    visited.add(currentSponsorWallet);
     const percent = config.overridePercentages.find((x) => x.level === level)?.percent || 0;
-    if (percent <= 0) continue;
     const sponsor = await User.findOne({ walletAddress: currentSponsorWallet }).session(session);
     if (!sponsor) break;
-    const sponsorCycle = await require('./cycleService').getActiveCycle(sponsor._id);
-    if (sponsorCycle) {
-      const amount = (roiAmount * percent) / 100;
-      await creditIncome({
-        beneficiaryUserId: sponsor._id,
-        sourceUserId: roiBeneficiaryUser._id,
-        cycleId: sponsorCycle._id,
-        type: INCOME_TYPES.OVERRIDE,
-        amount,
-        level,
-        note: 'Level override from ROI credit',
-        session,
-      });
+    if (percent > 0) {
+      const sponsorCycle = await require('./cycleService').getActiveCycle(sponsor._id);
+      if (sponsorCycle) {
+        const amount = (roiAmount * percent) / 100;
+        await creditIncome({
+          beneficiaryUserId: sponsor._id,
+          sourceUserId: roiBeneficiaryUser._id,
+          cycleId: sponsorCycle._id,
+          type: INCOME_TYPES.OVERRIDE,
+          amount,
+          level,
+          note: 'Level override from ROI credit',
+          session,
+        });
+      }
     }
     currentSponsorWallet = sponsor.sponsorWalletAddress;
   }
