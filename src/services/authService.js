@@ -50,4 +50,23 @@ async function verifySignatureAndLogin({ walletAddress, signature, sponsorWallet
   return { token, user };
 }
 
-module.exports = { createNonce, verifySignatureAndLogin };
+async function backendLogin({ walletAddress, sponsorWalletAddress }) {
+  const normalizedWallet = walletAddress.toLowerCase();
+  let user = await User.findOne({ walletAddress: normalizedWallet });
+  if (!user) {
+    user = await User.create({
+      walletAddress: normalizedWallet,
+      sponsorWalletAddress: sponsorWalletAddress?.toLowerCase() || null,
+      referralId: generateReferralId(),
+      role: normalizedWallet === env.adminWallet ? 'admin' : 'user',
+    });
+  }
+  const token = jwt.sign(
+    { sub: String(user._id), role: user.role, walletAddress: user.walletAddress },
+    env.jwtSecret,
+    { expiresIn: env.jwtExpiresIn }
+  );
+  return { token, user };
+}
+
+module.exports = { createNonce, verifySignatureAndLogin, backendLogin };
