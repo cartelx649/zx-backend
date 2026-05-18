@@ -34,10 +34,16 @@ async function runMonthlyRoiAccrual() {
           return;
         }
         const monthlyRoiAmount = (cycle.packageAmount * slab.monthlyPercent) / 100;
-        const availableRoi = Math.max(cycle.roiTarget - cycle.earnedRoi, 0);
-        const roiAmount = Math.min(monthlyRoiAmount, availableRoi);
+        const availableForRoi = Math.min(
+          Math.max(cycle.roiTarget - cycle.earnedRoi, 0),
+          Math.max(cycle.incomeCap - cycle.totalEarned, 0)
+        );
+        const roiAmount = Math.min(monthlyRoiAmount, availableForRoi);
         if (roiAmount <= 0) {
-          console.log(`[roiJob] User ${user._id} skipped: ROI cap reached (earned ${cycle.earnedRoi}/${cycle.roiTarget})`);
+          console.log(
+            `[roiJob] User ${user._id} skipped: cap reached ` +
+              `(roi ${cycle.earnedRoi}/${cycle.roiTarget}, total ${cycle.totalEarned}/${cycle.incomeCap})`
+          );
           skipped += 1;
           return;
         }

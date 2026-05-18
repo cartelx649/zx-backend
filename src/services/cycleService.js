@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Cycle = require('../models/Cycle');
 const User = require('../models/User');
-const { CAP_MULTIPLIER, ROI_MULTIPLIER } = require('../config/constants');
+const { CAP_MULTIPLIER, ROI_MULTIPLIER, DIRECT_LEVEL_MULTIPLIER } = require('../config/constants');
 const ApiError = require('../utils/ApiError');
 
 async function getActiveCycle(userId) {
@@ -35,20 +35,36 @@ async function createCycleForDeposit(user, packageAmount, session) {
 
 async function applyIncomeToCycle(cycleId, incomeType, amount, session = null) {
   const cycle = await Cycle.findById(cycleId).session(session);
-  if (!cycle || !cycle.isActive) {
-    throw new ApiError(400, 'Active cycle not found', 'CYCLE_NOT_ACTIVE');
+  if (!cycle || !cycle.isActive) return { cycle: null, creditedAmount: 0 };
+
+  const remainingTotal = Math.max(cycle.incomeCap - cycle.totalEarned, 0);
+  let remainingType = remainingTotal;
+  if (incomeType === 'roi') {
+    remainingType = Math.max(cycle.roiTarget - cycle.earnedRoi, 0);
+  } else if (incomeType === 'direct' || incomeType === 'override') {
+    const directLevelCap = cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER;
+    remainingType = Math.max(directLevelCap - (cycle.earnedDirect + cycle.earnedOverride), 0);
   }
-  if (incomeType === 'roi') cycle.earnedRoi += amount;
-  if (incomeType === 'direct') cycle.earnedDirect += amount;
-  if (incomeType === 'override') cycle.earnedOverride += amount;
+  const remainingCap = Math.min(remainingTotal, remainingType);
+  const creditedAmount = Math.max(0, Math.min(amount, remainingCap));
+  if (creditedAmount <= 0) return { cycle, creditedAmount: 0 };
+
+  if (incomeType === 'roi') cycle.earnedRoi += creditedAmount;
+  if (incomeType === 'direct') cycle.earnedDirect += creditedAmount;
+  if (incomeType === 'override') cycle.earnedOverride += creditedAmount;
   cycle.totalEarned = cycle.earnedRoi + cycle.earnedDirect + cycle.earnedOverride;
-  if (cycle.earnedRoi >= cycle.roiTarget || cycle.totalEarned >= cycle.incomeCap) {
+
+  const directLevelCap = cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER;
+  const roiSaturated = cycle.earnedRoi >= cycle.roiTarget;
+  const directLevelSaturated = cycle.earnedDirect + cycle.earnedOverride >= directLevelCap;
+  const totalSaturated = cycle.totalEarned >= cycle.incomeCap;
+  if (roiSaturated || directLevelSaturated || totalSaturated) {
     cycle.isActive = false;
     cycle.closedAt = new Date();
     await User.findByIdAndUpdate(cycle.userId, { isActive: false }, { session });
   }
   await cycle.save({ session });
-  return cycle;
+  return { cycle, creditedAmount };
 }
 
 async function withMongoTransaction(work) {

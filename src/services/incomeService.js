@@ -18,11 +18,23 @@ async function creditIncome({
   note = '',
   session = null,
 }) {
+  const { creditedAmount } = await applyIncomeToCycle(cycleId, type, amount, session);
+  if (creditedAmount <= 0) return null;
   const ledger = await IncomeLedger.create(
-    [{ beneficiaryUserId, sourceUserId, cycleId, type, amount, level, note, monthKey: monthKey() }],
+    [
+      {
+        beneficiaryUserId,
+        sourceUserId,
+        cycleId,
+        type,
+        amount: creditedAmount,
+        level,
+        note,
+        monthKey: monthKey(),
+      },
+    ],
     { session }
   );
-  await applyIncomeToCycle(cycleId, type, amount, session);
   return ledger[0];
 }
 

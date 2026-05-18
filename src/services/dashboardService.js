@@ -3,7 +3,7 @@ const IncomeLedger = require('../models/IncomeLedger');
 const Withdrawal = require('../models/Withdrawal');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
-const { INCOME_TYPES, WITHDRAWAL_STATUS } = require('../config/constants');
+const { INCOME_TYPES, WITHDRAWAL_STATUS, DIRECT_LEVEL_MULTIPLIER } = require('../config/constants');
 const { getActiveCycle } = require('./cycleService');
 const { getConfig } = require('./configService');
 const { resolveRoiSlab } = require('./depositService');
@@ -33,6 +33,7 @@ function emptyActiveCycle() {
     slab: null,
     roiProgress: { current: 0, target: 0 },
     capProgress: { current: 0, target: 0 },
+    directLevelProgress: { current: 0, target: 0 },
   };
 }
 
@@ -89,6 +90,10 @@ async function getDashboard(userId) {
         : null,
       roiProgress: { current: cycle.earnedRoi, target: cycle.roiTarget },
       capProgress: { current: cycle.totalEarned, target: cycle.incomeCap },
+      directLevelProgress: {
+        current: cycle.earnedDirect + cycle.earnedOverride,
+        target: cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER,
+      },
     };
   }
 
