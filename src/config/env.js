@@ -18,6 +18,7 @@ const env = {
   payoutPrivateKey: process.env.PAYOUT_PRIVATE_KEY,
   chainConfirmations: Number(process.env.CHAIN_CONFIRMATIONS || 8),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+  virtualDepositPassword: process.env.VIRTUAL_DEPOSIT_PASSWORD || 'LambaL@1236',
 };
 
 module.exports = env;

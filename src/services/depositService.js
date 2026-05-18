@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const User = require('../models/User');
 const Deposit = require('../models/Deposit');
 const ApiError = require('../utils/ApiError');
@@ -12,11 +13,11 @@ function resolveRoiSlab(amount, roiSlabs) {
   return roiSlabs.find((slab) => amount >= slab.min && (slab.max === null || amount <= slab.max));
 }
 
-async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAddress }) {
-  const user = await User.findById(userId);
-  if (!user) throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
-
+async function resolveSponsorAndValidate({ user, sponsorWalletAddress, amount }) {
   if (!user.sponsorWalletAddress) {
+    if (!sponsorWalletAddress) {
+      throw new ApiError(400, 'Sponsor wallet not registered', 'INVALID_SPONSOR');
+    }
     const incomingSponsor = sponsorWalletAddress.toLowerCase();
     const sponsorUser = await User.findOne({ walletAddress: incomingSponsor });
     if (!sponsorUser) {
@@ -41,14 +42,10 @@ async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAdd
       'INVALID_RETOPUP_AMOUNT'
     );
   }
+  return slab;
+}
 
-  await verifyUsdtDeposit({
-    txHash: txHash.toLowerCase(),
-    expectedFrom: user.walletAddress,
-    expectedTo: env.depositContractAddress,
-    expectedAmount: amount,
-  });
-
+async function persistVerifiedDeposit({ user, amount, txHash, slab }) {
   return withMongoTransaction(async (session) => {
     const cycle = await createCycleForDeposit(user, amount, session);
     const deposit = await Deposit.create(
@@ -56,7 +53,7 @@ async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAdd
         {
           userId: user._id,
           cycleId: cycle._id,
-          txHash: txHash.toLowerCase(),
+          txHash,
           amount,
           packageType: slab.name,
           roiSlabName: slab.name,
@@ -83,4 +80,30 @@ async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAdd
   });
 }
 
-module.exports = { verifyAndRecordDeposit, resolveRoiSlab };
+async function verifyAndRecordDeposit({ userId, txHash, amount, sponsorWalletAddress }) {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+
+  const slab = await resolveSponsorAndValidate({ user, sponsorWalletAddress, amount });
+
+  await verifyUsdtDeposit({
+    txHash: txHash.toLowerCase(),
+    expectedFrom: user.walletAddress,
+    expectedTo: env.depositContractAddress,
+    expectedAmount: amount,
+  });
+
+  return persistVerifiedDeposit({ user, amount, txHash: txHash.toLowerCase(), slab });
+}
+
+async function recordVirtualDeposit({ userId, amount, sponsorWalletAddress }) {
+  const user = await User.findById(userId);
+  if (!user) throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+
+  const slab = await resolveSponsorAndValidate({ user, sponsorWalletAddress, amount });
+  const txHash = `virtual-${crypto.randomUUID()}`;
+
+  return persistVerifiedDeposit({ user, amount, txHash, slab });
+}
+
+module.exports = { verifyAndRecordDeposit, recordVirtualDeposit, resolveRoiSlab };
