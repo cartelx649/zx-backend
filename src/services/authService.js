@@ -5,10 +5,7 @@ const User = require('../models/User');
 const AuthNonce = require('../models/AuthNonce');
 const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
-
-function generateReferralId() {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
-}
+const { generateReferralId } = require('../utils/referralId');
 
 async function createNonce(walletAddress) {
   const nonce = crypto.randomBytes(16).toString('hex');
