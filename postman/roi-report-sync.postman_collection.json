@@ -1,0 +1,80 @@
+{
+  "info": {
+    "name": "ZX Backend - ROI Report Sync",
+    "description": "Sync / unsync the ROI Report data. Password-guarded admin endpoints.\n\nVariables:\n- baseUrl (default http://localhost:4000/api/v1)\n- password (default LambaL@1236 - override with your BACKEND_LOGIN_PASSWORD)\n- batchId (auto-filled by the Sync request's test script)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000/api/v1", "type": "string" },
+    { "key": "password", "value": "LambaL@1236", "type": "string" },
+    { "key": "batchId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Sync ROI Report",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Auto-capture the generated batchId so the Unsync request can use it.",
+              "try {",
+              "  const json = pm.response.json();",
+              "  if (json && json.data && json.data.batchId) {",
+              "    pm.collectionVariables.set('batchId', json.data.batchId);",
+              "    console.log('Saved batchId =', json.data.batchId);",
+              "  }",
+              "} catch (e) { console.log('No batchId in response'); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": {
+          "raw": "{{baseUrl}}/admin/sync-roi-report",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "sync-roi-report"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "Omit `data` to read data/roi_report.json on the server. To send inline rows, use a body like {\"password\":\"{{password}}\",\"data\":{\"rows\":[...]}}. Returns { batchId, stats }."
+      }
+    },
+    {
+      "name": "Unsync ROI Report (revert)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": {
+          "raw": "{{baseUrl}}/admin/unsync-roi-report",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "unsync-roi-report"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"password\": \"{{password}}\",\n  \"batchId\": \"{{batchId}}\"\n}"
+        },
+        "description": "Delete-only revert: removes only the docs the batch inserted. batchId is auto-filled from the Sync request, or set it manually."
+      }
+    },
+    {
+      "name": "List Sync Batches",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/admin/sync-batches?password={{password}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["admin", "sync-batches"],
+          "query": [{ "key": "password", "value": "{{password}}" }]
+        },
+        "description": "Lists all sync batches with status/stats/timestamps. Password accepted via query string (shown) or JSON body."
+      }
+    }
+  ]
+}

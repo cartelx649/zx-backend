@@ -2,11 +2,13 @@ const User = require('../models/User');
 const Cycle = require('../models/Cycle');
 const Deposit = require('../models/Deposit');
 const IncomeLedger = require('../models/IncomeLedger');
+const SyncBatch = require('../models/SyncBatch');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { generateReferralId } = require('../utils/referralId');
 const { getConfig } = require('./configService');
 const { resolveRoiSlab } = require('./depositService');
+const { withMongoTransaction } = require('./cycleService');
 const {
   ROI_MULTIPLIER,
   CAP_MULTIPLIER,
@@ -32,6 +34,28 @@ function parseRow(row) {
   };
 }
 
+function emptyInsertedIds() {
+  return { users: [], cycles: [], deposits: [], ledger: [] };
+}
+
+/**
+ * Upsert a document and, when it was newly inserted (not matched), record its _id
+ * into the given bucket so a later unsync can delete exactly what this batch created.
+ */
+async function upsertTracked(Model, filter, update, bucket, insertedIds) {
+  const res = await Model.findOneAndUpdate(filter, update, {
+    upsert: true,
+    new: true,
+    setDefaultsOnInsert: true,
+    includeResultMetadata: true,
+  });
+  const upsertedId = res.lastErrorObject && res.lastErrorObject.upserted;
+  if (upsertedId && insertedIds) {
+    insertedIds[bucket].push(upsertedId);
+  }
+  return res.value;
+}
+
 async function syncFromDataJson(data, opts = {}) {
   const logger = opts.logger || console;
   if (!data || !Array.isArray(data.rows)) {
@@ -39,7 +63,9 @@ async function syncFromDataJson(data, opts = {}) {
   }
 
   const config = await getConfig();
+  const insertedIds = emptyInsertedIds();
   const stats = {
+    batchId: opts.batchId || null,
     rowsProcessed: 0,
     usersUpserted: 0,
     cyclesUpserted: 0,
@@ -53,7 +79,8 @@ async function syncFromDataJson(data, opts = {}) {
   // Pass 1: upsert User by walletAddress (no sponsor yet).
   for (const row of parsed) {
     const role = row.address === env.adminWallet ? 'admin' : 'user';
-    await User.findOneAndUpdate(
+    await upsertTracked(
+      User,
       { walletAddress: row.address },
       {
         $setOnInsert: {
@@ -64,7 +91,8 @@ async function syncFromDataJson(data, opts = {}) {
         },
         $set: { totalDeposited: row.deposited },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      'users',
+      insertedIds
     );
     stats.usersUpserted += 1;
   }
@@ -94,10 +122,6 @@ async function syncFromDataJson(data, opts = {}) {
     const userId = userByAddress.get(row.address);
     if (!userId) continue;
 
-    const slab = resolveRoiSlab(row.deposited, config.roiSlabs) || {
-      name: 'unknown',
-      monthlyPercent: 0,
-    };
     const packageAmount = row.deposited;
     const roiTarget = packageAmount * ROI_MULTIPLIER;
     const incomeCap = packageAmount * CAP_MULTIPLIER;
@@ -143,7 +167,8 @@ async function syncFromDataJson(data, opts = {}) {
     const totalSaturated = totalEarned >= incomeCap;
     const isActive = !(roiSaturated || directLevelSaturated || totalSaturated);
 
-    await Cycle.findOneAndUpdate(
+    await upsertTracked(
+      Cycle,
       { userId, cycleNumber: 1 },
       {
         $set: {
@@ -159,7 +184,8 @@ async function syncFromDataJson(data, opts = {}) {
         },
         $setOnInsert: { userId, cycleNumber: 1, startedAt: new Date() },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      'cycles',
+      insertedIds
     );
     stats.cyclesUpserted += 1;
   }
@@ -181,7 +207,8 @@ async function syncFromDataJson(data, opts = {}) {
       name: 'unknown',
       monthlyPercent: 0,
     };
-    await Deposit.findOneAndUpdate(
+    await upsertTracked(
+      Deposit,
       { txHash: `synced-${row.address}` },
       {
         $set: {
@@ -197,7 +224,8 @@ async function syncFromDataJson(data, opts = {}) {
         },
         $setOnInsert: { txHash: `synced-${row.address}` },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      'deposits',
+      insertedIds
     );
     stats.depositsUpserted += 1;
   }
@@ -218,7 +246,8 @@ async function syncFromDataJson(data, opts = {}) {
     ];
     for (const entry of ledgerEntries) {
       if (entry.amount <= 0) continue;
-      await IncomeLedger.findOneAndUpdate(
+      await upsertTracked(
+        IncomeLedger,
         {
           beneficiaryUserId: userId,
           sourceUserId: userId,
@@ -230,13 +259,77 @@ async function syncFromDataJson(data, opts = {}) {
         {
           $set: { amount: entry.amount, note: entry.note },
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        'ledger',
+        insertedIds
       );
       stats.ledgerEntriesUpserted += 1;
     }
   }
 
+  stats.insertedCounts = {
+    users: insertedIds.users.length,
+    cycles: insertedIds.cycles.length,
+    deposits: insertedIds.deposits.length,
+    ledger: insertedIds.ledger.length,
+  };
+
+  // Persist a revertable batch record only when a batchId is supplied.
+  // The legacy /sync-data-json route calls without one and keeps its pure-upsert behavior.
+  if (opts.batchId) {
+    await SyncBatch.create({
+      batchId: opts.batchId,
+      source: opts.source || 'data.json',
+      status: 'applied',
+      stats,
+      insertedIds,
+    });
+  }
+
   return stats;
 }
 
-module.exports = { syncFromDataJson, SYNTHETIC_MONTH_KEY };
+/**
+ * Delete-only revert: removes ONLY the documents this batch newly inserted.
+ * Documents that pre-existed and were merely field-updated are intentionally left
+ * intact (accepted trade-off of the delete-only revert model).
+ */
+async function unsyncBatch(batchId) {
+  if (!batchId) {
+    throw new ApiError(400, 'batchId is required', 'INVALID_BATCH_ID');
+  }
+  const batch = await SyncBatch.findOne({ batchId });
+  if (!batch) {
+    throw new ApiError(404, `Sync batch not found: ${batchId}`, 'SYNC_BATCH_NOT_FOUND');
+  }
+  if (batch.status === 'reverted') {
+    throw new ApiError(409, `Sync batch already reverted: ${batchId}`, 'SYNC_BATCH_ALREADY_REVERTED');
+  }
+
+  const deleted = await withMongoTransaction(async (session) => {
+    const ledger = await IncomeLedger.deleteMany(
+      { _id: { $in: batch.insertedIds.ledger } },
+      { session }
+    );
+    const deposits = await Deposit.deleteMany(
+      { _id: { $in: batch.insertedIds.deposits } },
+      { session }
+    );
+    const cycles = await Cycle.deleteMany({ _id: { $in: batch.insertedIds.cycles } }, { session });
+    const users = await User.deleteMany({ _id: { $in: batch.insertedIds.users } }, { session });
+
+    batch.status = 'reverted';
+    batch.revertedAt = new Date();
+    await batch.save({ session });
+
+    return {
+      ledger: ledger.deletedCount,
+      deposits: deposits.deletedCount,
+      cycles: cycles.deletedCount,
+      users: users.deletedCount,
+    };
+  });
+
+  return { batchId, status: 'reverted', deleted };
+}
+
+module.exports = { syncFromDataJson, unsyncBatch, SYNTHETIC_MONTH_KEY };
