@@ -8,6 +8,8 @@ const withdrawalSchema = new mongoose.Schema(
     requestedAmount: { type: Number, required: true },
     approvedAmount: { type: Number, default: 0 },
     status: { type: String, enum: Object.values(WITHDRAWAL_STATUS), default: WITHDRAWAL_STATUS.PENDING },
+    monthKey: { type: String, default: null, index: true },
+    incomeType: { type: String, default: null },
     payoutTxHash: { type: String, default: null },
     rejectionReason: { type: String, default: null },
     processedAt: { type: Date, default: null },
