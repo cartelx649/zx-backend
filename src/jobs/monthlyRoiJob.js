@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const { runMonthlyRoiAccrual } = require('../services/roiJobService');
 
 function startMonthlyRoiJob() {
-  cron.schedule('40 17 14 5 *', async () => {
+  cron.schedule('36 10 5 6 *', async () => {
     try {
       await runMonthlyRoiAccrual();
       console.log('Monthly ROI job completed.');
