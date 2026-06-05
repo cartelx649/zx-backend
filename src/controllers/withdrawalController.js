@@ -1,7 +1,12 @@
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const Withdrawal = require('../models/Withdrawal');
-const { requestWithdrawal, withdrawRoiForMonth, payWithdrawal } = require('../services/withdrawalService');
+const {
+  requestWithdrawal,
+  withdrawRoiForMonth,
+  withdrawRoiViaContract,
+  payWithdrawal,
+} = require('../services/withdrawalService');
 
 const requestSchema = Joi.object({
   amount: Joi.number().positive().required(),
@@ -9,6 +14,17 @@ const requestSchema = Joi.object({
 
 const monthSchema = Joi.object({
   month: Joi.string()
+    .pattern(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .required(),
+});
+
+const contractSchema = Joi.object({
+  walletAddress: Joi.string()
+    .pattern(/^0x[a-fA-F0-9]{40}$/)
+    .required(),
+  amount: Joi.number().positive().required(),
+  type: Joi.string().valid('roi').required(),
+  monthKey: Joi.string()
     .pattern(/^\d{4}-(0[1-9]|1[0-2])$/)
     .required(),
 });
@@ -25,6 +41,12 @@ const withdrawRoi = asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, data });
 });
 
+const withdrawRoiContract = asyncHandler(async (req, res) => {
+  const body = await contractSchema.validateAsync(req.body);
+  const data = await withdrawRoiViaContract(req.user.sub, body);
+  res.status(201).json({ ok: true, data });
+});
+
 const listMine = asyncHandler(async (req, res) => {
   const data = await Withdrawal.find({ userId: req.user.sub }).sort({ createdAt: -1 }).lean();
   res.json({ ok: true, data });
@@ -35,4 +57,4 @@ const pay = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
-module.exports = { request, withdrawRoi, listMine, pay };
+module.exports = { request, withdrawRoi, withdrawRoiContract, listMine, pay };

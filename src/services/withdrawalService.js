@@ -5,7 +5,7 @@ const ApiError = require('../utils/ApiError');
 const { INCOME_TYPES, WITHDRAWAL_STATUS } = require('../config/constants');
 const { getActiveCycle } = require('./cycleService');
 const { getConfig } = require('./configService');
-const { transferPayout } = require('./blockchainService');
+const { transferPayout, withdrawFromDepositContract } = require('./blockchainService');
 const { logAudit } = require('./auditService');
 
 // Both padded ("2026-05") and legacy non-padded ("2026-5") month keys exist in older rows.
@@ -97,6 +97,82 @@ async function withdrawRoiForMonth(userId, monthKey) {
   return { monthKey, roiTotal, withdrawnAmount: amount, entries, withdrawal };
 }
 
+async function withdrawRoiViaContract(userId, { walletAddress, amount, type, monthKey }) {
+  const user = await User.findById(userId);
+  if (!user || !user.isActive) throw new ApiError(400, 'User not active', 'USER_INACTIVE');
+  if (type !== INCOME_TYPES.ROI) throw new ApiError(400, 'Only ROI withdrawals are supported', 'INVALID_INCOME_TYPE');
+  if (walletAddress.toLowerCase() !== user.walletAddress) {
+    throw new ApiError(403, 'Wallet address does not match authenticated user', 'WALLET_MISMATCH');
+  }
+
+  const cycle = await getActiveCycle(user._id);
+  if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
+  const config = await getConfig();
+  if (!isWithdrawalWindowOpen(config.withdrawalWindow)) {
+    throw new ApiError(400, 'Withdrawal window is closed', 'WITHDRAWAL_WINDOW_CLOSED');
+  }
+
+  const existing = await Withdrawal.findOne({
+    userId: user._id,
+    incomeType: INCOME_TYPES.ROI,
+    monthKey,
+    status: { $ne: WITHDRAWAL_STATUS.REJECTED },
+  });
+  if (existing) {
+    throw new ApiError(409, 'ROI for this month already withdrawn', 'ROI_MONTH_ALREADY_WITHDRAWN');
+  }
+
+  const variants = monthKeyVariants(monthKey);
+  const agg = await IncomeLedger.aggregate([
+    { $match: { beneficiaryUserId: user._id, type: INCOME_TYPES.ROI, monthKey: { $in: variants } } },
+    { $group: { _id: null, total: { $sum: '$amount' } } },
+  ]);
+  const roiTotal = agg[0]?.total || 0;
+  if (roiTotal <= 0) throw new ApiError(400, 'No ROI for this month', 'NO_ROI_FOR_MONTH');
+  if (amount > roiTotal) {
+    throw new ApiError(400, 'Requested amount exceeds available ROI', 'AMOUNT_EXCEEDS_ROI');
+  }
+
+  const remainingCap = Math.max(cycle.incomeCap - cycle.totalEarned, 0);
+  if (amount > remainingCap) throw new ApiError(400, 'Cap reached. Re-topup required.', 'CAP_REACHED');
+
+  // Create the record first to reserve the month and avoid a double-withdraw race.
+  const withdrawal = await Withdrawal.create({
+    userId: user._id,
+    cycleId: cycle._id,
+    requestedAmount: amount,
+    approvedAmount: amount,
+    status: WITHDRAWAL_STATUS.APPROVED,
+    incomeType: INCOME_TYPES.ROI,
+    monthKey,
+  });
+
+  let payout;
+  try {
+    payout = await withdrawFromDepositContract({ to: user.walletAddress, amount });
+  } catch (err) {
+    withdrawal.status = WITHDRAWAL_STATUS.REJECTED;
+    withdrawal.rejectionReason = err.message;
+    withdrawal.processedAt = new Date();
+    await withdrawal.save();
+    throw err;
+  }
+
+  withdrawal.status = WITHDRAWAL_STATUS.PAID;
+  withdrawal.payoutTxHash = payout.txHash;
+  withdrawal.processedAt = new Date();
+  await withdrawal.save();
+  await logAudit({
+    actorUserId: user._id,
+    action: 'withdrawal.contract_paid',
+    entity: 'Withdrawal',
+    entityId: String(withdrawal._id),
+    meta: { txHash: payout.txHash, monthKey, amount },
+  });
+
+  return { monthKey, roiTotal, withdrawnAmount: amount, txHash: payout.txHash, withdrawal };
+}
+
 async function payWithdrawal(withdrawalId, actorUserId) {
   const withdrawal = await Withdrawal.findById(withdrawalId).populate('userId');
   if (!withdrawal) throw new ApiError(404, 'Withdrawal not found', 'WITHDRAWAL_NOT_FOUND');
@@ -121,4 +197,4 @@ async function payWithdrawal(withdrawalId, actorUserId) {
   return withdrawal;
 }
 
-module.exports = { requestWithdrawal, withdrawRoiForMonth, payWithdrawal };
+module.exports = { requestWithdrawal, withdrawRoiForMonth, withdrawRoiViaContract, payWithdrawal };
