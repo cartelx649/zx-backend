@@ -185,7 +185,7 @@ const fixLedgerMonthKeysHandler = asyncHandler(async (req, res) => {
     await logAudit({
       action: 'ledger_monthkey_fix',
       entity: 'IncomeLedger',
-      entityId: null,
+      entityId: `ledger-monthkey-fix-${new Date().toISOString().replace(/[:.]/g, '-')}`,
       meta: { scanned: result.scanned, updated: result.updated, merged: result.merged, skipped: result.skipped },
     });
   }
