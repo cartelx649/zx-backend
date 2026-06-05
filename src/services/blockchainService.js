@@ -91,7 +91,7 @@ async function withdrawFromDepositContract({ to, amount }) {
   const wallet = new ethers.Wallet(env.payoutPrivateKey, provider);
   const abi = getDepositContractAbi();
   const contract = new ethers.Contract(env.depositContractAddress, abi, wallet);
-  const amountUnits = BigInt(Math.round(amount * 1_000_000)); // USDT 6 decimals, as in transferPayout
+  const amountUnits = ethers.parseUnits(String(amount), 18); // BEP-20 USDT on BSC uses 18 decimals
   const tx = await contract.withdraw(to, amountUnits);
   const receipt = await tx.wait(env.chainConfirmations);
   return { txHash: receipt.hash };
