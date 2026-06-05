@@ -5,10 +5,15 @@ const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { getDashboard } = require('../services/dashboardService');
 const { getRoiProjection } = require('../services/roiCalculatorService');
+const { getMonthlyRoi } = require('../services/incomeService');
 
 const roiCalculatorSchema = Joi.object({
   password: Joi.string().required(),
   amount: Joi.number().positive().required(),
+});
+
+const monthlyRoiSchema = Joi.object({
+  month: Joi.string().required(),
 });
 
 const me = asyncHandler(async (req, res) => {
@@ -30,4 +35,10 @@ const roiCalculator = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
-module.exports = { me, dashboard, roiCalculator };
+const monthlyRoi = asyncHandler(async (req, res) => {
+  const { month } = await monthlyRoiSchema.validateAsync(req.query);
+  const data = await getMonthlyRoi(req.user.sub, month);
+  res.json({ ok: true, data });
+});
+
+module.exports = { me, dashboard, roiCalculator, monthlyRoi };
