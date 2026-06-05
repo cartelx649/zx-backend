@@ -8,6 +8,9 @@ const {
   syncRoiReport,
   unsyncRoiReport,
   listSyncBatches,
+  incomeOverview,
+  monthlyUserIncome,
+  fixLedgerMonthKeysHandler,
 } = require('../controllers/adminController');
 
 const router = express.Router();
@@ -19,5 +22,8 @@ router.post('/sync-data-json', syncDataJson);
 router.post('/sync-roi-report', syncRoiReport);
 router.post('/unsync-roi-report', unsyncRoiReport);
 router.get('/sync-batches', listSyncBatches);
+router.get('/income-overview', incomeOverview);
+router.get('/monthly-user-income', monthlyUserIncome);
+router.post('/fix-ledger-monthkeys', fixLedgerMonthKeysHandler);
 
 module.exports = router;

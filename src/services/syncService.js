@@ -332,4 +332,72 @@ async function unsyncBatch(batchId) {
   return { batchId, status: 'reverted', deleted };
 }
 
-module.exports = { syncFromDataJson, unsyncBatch, SYNTHETIC_MONTH_KEY };
+// Single-digit month (e.g. "2026-5"); excludes padded keys and "sync-historical".
+const NON_PADDED_MONTH_KEY = /^(\d{4})-(\d)$/;
+
+function padMonthKey(nonPadded) {
+  const m = nonPadded.match(NON_PADDED_MONTH_KEY);
+  if (!m) return null;
+  return `${m[1]}-${m[2].padStart(2, '0')}`;
+}
+
+/**
+ * Normalize IncomeLedger.monthKey from non-padded "YYYY-M" to padded "YYYY-MM".
+ * On a unique-index collision (a padded twin already exists for the same
+ * beneficiary/source/type/level/cycle), the non-padded row's amount is summed
+ * into the twin and the non-padded row deleted; otherwise it is updated in place.
+ *
+ * @param {{ dry?: boolean, sampleLimit?: number }} opts
+ */
+async function fixLedgerMonthKeys({ dry = false, sampleLimit = 100 } = {}) {
+  const candidates = await IncomeLedger.find({ monthKey: { $regex: NON_PADDED_MONTH_KEY } }).lean();
+  const counts = { updated: 0, merged: 0, skipped: 0 };
+  const changes = [];
+
+  for (const doc of candidates) {
+    const target = padMonthKey(doc.monthKey);
+    if (!target) {
+      counts.skipped += 1;
+      continue;
+    }
+
+    const twin = await IncomeLedger.findOne({
+      beneficiaryUserId: doc.beneficiaryUserId,
+      sourceUserId: doc.sourceUserId,
+      type: doc.type,
+      monthKey: target,
+      level: doc.level,
+      cycleId: doc.cycleId,
+      _id: { $ne: doc._id },
+    }).lean();
+
+    if (twin) {
+      if (!dry) {
+        await IncomeLedger.updateOne({ _id: twin._id }, { $inc: { amount: doc.amount } });
+        await IncomeLedger.deleteOne({ _id: doc._id });
+      }
+      counts.merged += 1;
+      if (changes.length < sampleLimit) {
+        changes.push({ action: 'merge', id: String(doc._id), from: doc.monthKey, to: target, amount: doc.amount, into: String(twin._id) });
+      }
+    } else {
+      if (!dry) {
+        await IncomeLedger.updateOne({ _id: doc._id }, { $set: { monthKey: target } });
+      }
+      counts.updated += 1;
+      if (changes.length < sampleLimit) {
+        changes.push({ action: 'update', id: String(doc._id), from: doc.monthKey, to: target });
+      }
+    }
+  }
+
+  return {
+    dry,
+    scanned: candidates.length,
+    ...counts,
+    changes,
+    changesTruncated: candidates.length > changes.length,
+  };
+}
+
+module.exports = { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys, SYNTHETIC_MONTH_KEY };

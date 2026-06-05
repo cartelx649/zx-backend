@@ -14,7 +14,7 @@ const FIXTURE_CONFIG = {
 };
 
 describe('calculateProjection', () => {
-  it('projects ROI, direct and level income for a $2 deposit', () => {
+  test('projects ROI, direct and level income for a $2 deposit', () => {
     const result = calculateProjection(2, FIXTURE_CONFIG);
 
     expect(result.input.slab.name).toBe('s1');
@@ -33,13 +33,13 @@ describe('calculateProjection', () => {
     expect(result.level.directLevelCap).toBe(2);
   });
 
-  it('selects the correct slab for higher amounts', () => {
+  test('selects the correct slab for higher amounts', () => {
     const result = calculateProjection(1000, FIXTURE_CONFIG);
     expect(result.input.slab.name).toBe('s2');
     expect(result.roi.monthlyRoi).toBe(60); // 1000 * 6%
   });
 
-  it('throws when amount matches no slab', () => {
+  test('throws when amount matches no slab', () => {
     expect(() => calculateProjection(0.5, FIXTURE_CONFIG)).toThrow('Amount does not match any ROI slab');
   });
 });

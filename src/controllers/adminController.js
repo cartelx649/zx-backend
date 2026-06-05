@@ -5,7 +5,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { getKpis, getConfig, updateConfig } = require('../services/adminService');
-const { syncFromDataJson, unsyncBatch } = require('../services/syncService');
+const { getIncomeOverview, getMonthlyUserIncome } = require('../services/systemIncomeService');
+const { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys } = require('../services/syncService');
 const { logAudit } = require('../services/auditService');
 const SyncBatch = require('../models/SyncBatch');
 
@@ -126,6 +127,34 @@ const unsyncRoiReport = asyncHandler(async (req, res) => {
   res.json({ ok: true, data: result });
 });
 
+const incomeOverviewSchema = Joi.object({
+  password: Joi.string().required(),
+  months: Joi.number().integer().min(0).max(120).default(12),
+});
+
+const incomeOverview = asyncHandler(async (req, res) => {
+  const { password, months } = await incomeOverviewSchema.validateAsync(req.query);
+  if (password !== env.virtualDepositPassword) {
+    throw new ApiError(401, 'Invalid password', 'INVALID_PASSWORD');
+  }
+  const data = await getIncomeOverview({ months });
+  res.json({ ok: true, data });
+});
+
+const monthlyUserIncomeSchema = Joi.object({
+  password: Joi.string().required(),
+  month: Joi.string().required(),
+});
+
+const monthlyUserIncome = asyncHandler(async (req, res) => {
+  const { password, month } = await monthlyUserIncomeSchema.validateAsync(req.query);
+  if (password !== env.virtualDepositPassword) {
+    throw new ApiError(401, 'Invalid password', 'INVALID_PASSWORD');
+  }
+  const data = await getMonthlyUserIncome({ month });
+  res.json({ ok: true, data });
+});
+
 const listSyncBatchesSchema = Joi.object({
   password: Joi.string().required(),
 });
@@ -142,6 +171,27 @@ const listSyncBatches = asyncHandler(async (req, res) => {
   res.json({ ok: true, data: batches });
 });
 
+const fixLedgerMonthKeysSchema = Joi.object({
+  password: Joi.string().required(),
+  dry: Joi.boolean().default(false),
+});
+
+const fixLedgerMonthKeysHandler = asyncHandler(async (req, res) => {
+  const payload = await fixLedgerMonthKeysSchema.validateAsync(req.body);
+  assertSyncPassword(payload.password);
+
+  const result = await fixLedgerMonthKeys({ dry: payload.dry });
+  if (!payload.dry) {
+    await logAudit({
+      action: 'ledger_monthkey_fix',
+      entity: 'IncomeLedger',
+      entityId: null,
+      meta: { scanned: result.scanned, updated: result.updated, merged: result.merged, skipped: result.skipped },
+    });
+  }
+  res.json({ ok: true, data: result });
+});
+
 module.exports = {
   kpis,
   config,
@@ -150,4 +200,7 @@ module.exports = {
   syncRoiReport,
   unsyncRoiReport,
   listSyncBatches,
+  incomeOverview,
+  monthlyUserIncome,
+  fixLedgerMonthKeysHandler,
 };
