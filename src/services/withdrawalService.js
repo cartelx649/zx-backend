@@ -107,10 +107,8 @@ async function withdrawRoiViaContract(userId, { walletAddress, amount, type, mon
 
   const cycle = await getActiveCycle(user._id);
   if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
-  const config = await getConfig();
-  if (!isWithdrawalWindowOpen(config.withdrawalWindow)) {
-    throw new ApiError(400, 'Withdrawal window is closed', 'WITHDRAWAL_WINDOW_CLOSED');
-  }
+  // Note: the day-of-month withdrawal window is intentionally not enforced for the
+  // contract-based withdrawal endpoint; it can be called any day.
 
   const existing = await Withdrawal.findOne({
     userId: user._id,
