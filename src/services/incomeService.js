@@ -141,6 +141,97 @@ async function getWithdrawableIncome(userId, month) {
   };
 }
 
+// All-users variant of getWithdrawableIncome: returns one row per user (every user
+// appears, zeros for those with no direct/override income that month) with per-type
+// totals, itemized entries, and joined withdrawal/claim status — for the admin
+// withdrawal dashboard. Mirrors the all-users aggregation pattern in
+// systemIncomeService.getMonthlyUserIncome (group ledger by beneficiaryUserId).
+async function getAllUsersWithdrawableIncome(month) {
+  const key = parseMonthParam(month);
+  const variants = monthKeyVariants(key);
+  const types = [INCOME_TYPES.DIRECT, INCOME_TYPES.OVERRIDE];
+
+  const [users, entries, withdrawals] = await Promise.all([
+    User.find({}, { walletAddress: 1 }).lean(),
+    IncomeLedger.find({ type: { $in: types }, monthKey: { $in: variants } })
+      .select('beneficiaryUserId amount type level sourceUserId cycleId note monthKey createdAt')
+      .sort({ createdAt: -1 })
+      .lean(),
+    Withdrawal.find({
+      monthKey: { $in: variants },
+      incomeType: { $in: types },
+      status: { $ne: WITHDRAWAL_STATUS.REJECTED },
+    }).lean(),
+  ]);
+
+  const newTotals = () => ({
+    direct: { amount: 0, count: 0, withdrawnAmount: 0, claimableAmount: 0 },
+    override: { amount: 0, count: 0, withdrawnAmount: 0, claimableAmount: 0 },
+    combined: { amount: 0, count: 0 },
+  });
+
+  const rowByUser = new Map();
+  for (const u of users) {
+    rowByUser.set(String(u._id), {
+      userId: String(u._id),
+      walletAddress: u.walletAddress || null,
+      totals: newTotals(),
+      entries: [],
+      withdrawals: [],
+    });
+  }
+
+  for (const entry of entries) {
+    const row = rowByUser.get(String(entry.beneficiaryUserId));
+    if (!row) continue; // orphan ledger row — skip
+    const bucket = row.totals[entry.type];
+    if (!bucket) continue;
+    row.entries.push(entry);
+    bucket.amount += entry.amount || 0;
+    bucket.count += 1;
+    row.totals.combined.amount += entry.amount || 0;
+    row.totals.combined.count += 1;
+  }
+
+  for (const w of withdrawals) {
+    const row = rowByUser.get(String(w.userId));
+    if (!row) continue;
+    const bucket = row.totals[w.incomeType];
+    if (!bucket) continue;
+    row.withdrawals.push(w);
+    bucket.withdrawnAmount += w.approvedAmount || 0;
+  }
+
+  const systemTotals = {
+    direct: { amount: 0, withdrawnAmount: 0 },
+    override: { amount: 0, withdrawnAmount: 0 },
+    combined: { amount: 0, count: 0 },
+    withdrawn: 0,
+  };
+
+  for (const row of rowByUser.values()) {
+    for (const type of types) {
+      const bucket = row.totals[type];
+      bucket.claimableAmount = Math.max(bucket.amount - bucket.withdrawnAmount, 0);
+      systemTotals[type].amount += bucket.amount;
+      systemTotals[type].withdrawnAmount += bucket.withdrawnAmount;
+      systemTotals.withdrawn += bucket.withdrawnAmount;
+    }
+    systemTotals.combined.amount += row.totals.combined.amount;
+    systemTotals.combined.count += row.totals.combined.count;
+  }
+
+  const usersOut = Array.from(rowByUser.values()).sort(
+    (a, b) => b.totals.combined.amount - a.totals.combined.amount
+  );
+
+  return {
+    meta: { month: key, generatedAt: new Date().toISOString(), userCount: usersOut.length },
+    systemTotals,
+    users: usersOut,
+  };
+}
+
 async function creditIncome({
   beneficiaryUserId,
   sourceUserId,
@@ -230,4 +321,5 @@ module.exports = {
   monthKey,
   getMonthlyRoi,
   getWithdrawableIncome,
+  getAllUsersWithdrawableIncome,
 };

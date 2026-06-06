@@ -7,7 +7,7 @@ const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { getKpis, getConfig, updateConfig } = require('../services/adminService');
 const { getIncomeOverview, getMonthlyUserIncome } = require('../services/systemIncomeService');
-const { getWithdrawableIncome } = require('../services/incomeService');
+const { getWithdrawableIncome, getAllUsersWithdrawableIncome } = require('../services/incomeService');
 const { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys } = require('../services/syncService');
 const { logAudit } = require('../services/auditService');
 const SyncBatch = require('../models/SyncBatch');
@@ -175,6 +175,15 @@ const adminWithdrawableIncome = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+const adminAllUsersWithdrawableIncome = asyncHandler(async (req, res) => {
+  const { password, month } = await monthlyUserIncomeSchema.validateAsync(req.query);
+  if (password !== env.virtualDepositPassword) {
+    throw new ApiError(401, 'Invalid password', 'INVALID_PASSWORD');
+  }
+  const data = await getAllUsersWithdrawableIncome(month);
+  res.json({ ok: true, data });
+});
+
 const listSyncBatchesSchema = Joi.object({
   password: Joi.string().required(),
 });
@@ -223,5 +232,6 @@ module.exports = {
   incomeOverview,
   monthlyUserIncome,
   adminWithdrawableIncome,
+  adminAllUsersWithdrawableIncome,
   fixLedgerMonthKeysHandler,
 };

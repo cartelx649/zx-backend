@@ -11,6 +11,7 @@ const {
   incomeOverview,
   monthlyUserIncome,
   adminWithdrawableIncome,
+  adminAllUsersWithdrawableIncome,
   fixLedgerMonthKeysHandler,
 } = require('../controllers/adminController');
 
@@ -25,6 +26,7 @@ router.post('/unsync-roi-report', unsyncRoiReport);
 router.get('/sync-batches', listSyncBatches);
 router.get('/income-overview', incomeOverview);
 router.get('/monthly-user-income', monthlyUserIncome);
+router.get('/income/withdrawable', adminAllUsersWithdrawableIncome);
 router.get('/users/:userId/income/withdrawable', adminWithdrawableIncome);
 router.post('/fix-ledger-monthkeys', fixLedgerMonthKeysHandler);
 
