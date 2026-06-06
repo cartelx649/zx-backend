@@ -98,6 +98,13 @@ async function withdrawRoiForMonth(userId, monthKey) {
 }
 
 async function withdrawRoiViaContract(userId, { walletAddress, amount, type, monthKey }) {
+
+const adminFee = Number(((amount * 5) / 100).toFixed(8));
+const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
+
+
+
+
   const user = await User.findById(userId);
   if (!user || !user.isActive) throw new ApiError(400, 'User not active', 'USER_INACTIVE');
   if (type !== INCOME_TYPES.ROI) throw new ApiError(400, 'Only ROI withdrawals are supported', 'INVALID_INCOME_TYPE');
@@ -138,8 +145,8 @@ async function withdrawRoiViaContract(userId, { walletAddress, amount, type, mon
   const withdrawal = await Withdrawal.create({
     userId: user._id,
     cycleId: cycle._id,
-    requestedAmount: amount,
-    approvedAmount: amount,
+    requestedAmount: payoutAmountFinal,
+    approvedAmount: payoutAmountFinal,
     status: WITHDRAWAL_STATUS.APPROVED,
     incomeType: INCOME_TYPES.ROI,
     monthKey,
@@ -147,7 +154,7 @@ async function withdrawRoiViaContract(userId, { walletAddress, amount, type, mon
 
   let payout;
   try {
-    payout = await withdrawFromDepositContract({ to: user.walletAddress, amount });
+    payout = await withdrawFromDepositContract({ to: user.walletAddress, payoutAmountFinal });
   } catch (err) {
     withdrawal.status = WITHDRAWAL_STATUS.REJECTED;
     withdrawal.rejectionReason = err.message;
@@ -165,10 +172,10 @@ async function withdrawRoiViaContract(userId, { walletAddress, amount, type, mon
     action: 'withdrawal.contract_paid',
     entity: 'Withdrawal',
     entityId: String(withdrawal._id),
-    meta: { txHash: payout.txHash, monthKey, amount },
+    meta: { txHash: payout.txHash, monthKey, payoutAmountFinal },
   });
 
-  return { monthKey, roiTotal, withdrawnAmount: amount, txHash: payout.txHash, withdrawal };
+  return { monthKey, roiTotal, withdrawnAmount: payoutAmountFinal, txHash: payout.txHash, withdrawal };
 }
 
 async function payWithdrawal(withdrawalId, actorUserId) {
