@@ -6,6 +6,6 @@ const { verifyDeposit, createVirtualDeposit } = require('../controllers/depositC
 const router = express.Router();
 
 router.post('/verify', auth('user'), idempotency(), verifyDeposit);
-router.post('/virtual', idempotency(), createVirtualDeposit);
+// router.post('/virtual', idempotency(), createVirtualDeposit);
 
 module.exports = router;
