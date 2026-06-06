@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Withdrawal = require('../models/Withdrawal');
 const User = require('../models/User');
 const IncomeLedger = require('../models/IncomeLedger');
@@ -204,4 +205,56 @@ async function payWithdrawal(withdrawalId, actorUserId) {
   return withdrawal;
 }
 
-module.exports = { requestWithdrawal, withdrawRoiForMonth, withdrawViaContract, payWithdrawal };
+function formatLedgerEntry(w) {
+  return {
+    id: w._id,
+    requestedAmount: w.requestedAmount,
+    approvedAmount: w.approvedAmount,
+    status: w.status,
+    incomeType: w.incomeType,
+    monthKey: w.monthKey,
+    payoutTxHash: w.payoutTxHash,
+    rejectionReason: w.rejectionReason,
+    requestedAt: w.createdAt,
+    processedAt: w.processedAt,
+  };
+}
+
+async function getWithdrawalHistory(userId, { limit, offset, status, type }) {
+  const query = { userId };
+  if (status) query.status = status;
+  if (type) query.incomeType = type;
+
+  const [items, total, summaryAgg] = await Promise.all([
+    Withdrawal.find(query).sort({ createdAt: -1 }).skip(offset).limit(limit).lean(),
+    Withdrawal.countDocuments(query),
+    // Summary is over ALL of the user's withdrawals, independent of the list filters.
+    Withdrawal.aggregate([
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+      { $group: { _id: '$status', amount: { $sum: '$approvedAmount' }, count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const summary = { totalWithdrawn: 0, pendingAmount: 0, approvedAmount: 0, rejectedCount: 0, totalCount: 0 };
+  for (const row of summaryAgg) {
+    summary.totalCount += row.count;
+    if (row._id === WITHDRAWAL_STATUS.PAID) summary.totalWithdrawn += row.amount;
+    if (row._id === WITHDRAWAL_STATUS.PENDING) summary.pendingAmount += row.amount;
+    if (row._id === WITHDRAWAL_STATUS.APPROVED) summary.approvedAmount += row.amount;
+    if (row._id === WITHDRAWAL_STATUS.REJECTED) summary.rejectedCount += row.count;
+  }
+
+  return {
+    items: items.map(formatLedgerEntry),
+    summary,
+    pagination: { total, limit, offset, hasMore: offset + items.length < total },
+  };
+}
+
+module.exports = {
+  requestWithdrawal,
+  withdrawRoiForMonth,
+  withdrawViaContract,
+  payWithdrawal,
+  getWithdrawalHistory,
+};

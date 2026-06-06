@@ -1,11 +1,13 @@
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const Withdrawal = require('../models/Withdrawal');
+const { WITHDRAWAL_STATUS } = require('../config/constants');
 const {
   requestWithdrawal,
   withdrawRoiForMonth,
   withdrawViaContract,
   payWithdrawal,
+  getWithdrawalHistory,
 } = require('../services/withdrawalService');
 
 const requestSchema = Joi.object({
@@ -52,9 +54,22 @@ const listMine = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+const historySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(100).default(20),
+  offset: Joi.number().integer().min(0).default(0),
+  status: Joi.string().valid(...Object.values(WITHDRAWAL_STATUS)),
+  type: Joi.string().valid('roi', 'direct', 'override'),
+});
+
+const history = asyncHandler(async (req, res) => {
+  const { limit, offset, status, type } = await historySchema.validateAsync(req.query);
+  const data = await getWithdrawalHistory(req.user.sub, { limit, offset, status, type });
+  res.json({ ok: true, data });
+});
+
 const pay = asyncHandler(async (req, res) => {
   const data = await payWithdrawal(req.params.withdrawalId, req.user.sub);
   res.json({ ok: true, data });
 });
 
-module.exports = { request, withdrawRoi, withdrawContract, listMine, pay };
+module.exports = { request, withdrawRoi, withdrawContract, listMine, history, pay };
