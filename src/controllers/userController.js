@@ -5,7 +5,7 @@ const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { getDashboard } = require('../services/dashboardService');
 const { getRoiProjection } = require('../services/roiCalculatorService');
-const { getMonthlyRoi } = require('../services/incomeService');
+const { getMonthlyRoi, getWithdrawableIncome } = require('../services/incomeService');
 
 const roiCalculatorSchema = Joi.object({
   password: Joi.string().required(),
@@ -41,4 +41,10 @@ const monthlyRoi = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
-module.exports = { me, dashboard, roiCalculator, monthlyRoi };
+const withdrawableIncome = asyncHandler(async (req, res) => {
+  const { month } = await monthlyRoiSchema.validateAsync(req.query);
+  const data = await getWithdrawableIncome(req.user.sub, month);
+  res.json({ ok: true, data });
+});
+
+module.exports = { me, dashboard, roiCalculator, monthlyRoi, withdrawableIncome };

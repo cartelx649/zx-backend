@@ -1,8 +1,14 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const IncomeLedger = require('../models/IncomeLedger');
+const Withdrawal = require('../models/Withdrawal');
 const ApiError = require('../utils/ApiError');
-const { INCOME_TYPES, DIRECT_COMMISSION_PERCENT, MAX_OVERRIDE_LEVELS } = require('../config/constants');
+const {
+  INCOME_TYPES,
+  WITHDRAWAL_STATUS,
+  DIRECT_COMMISSION_PERCENT,
+  MAX_OVERRIDE_LEVELS,
+} = require('../config/constants');
 const { getConfig } = require('./configService');
 const { applyIncomeToCycle } = require('./cycleService');
 
@@ -70,6 +76,68 @@ async function getMonthlyRoi(userId, month) {
     monthKey: key,
     totalRoi: rows[0]?.totalRoi || 0,
     count: rows[0]?.count || 0,
+  };
+}
+
+// Direct + override income credited to a user for a given month, read from the
+// income ledger and joined with withdrawals so the withdrawal dashboard can render
+// claim status. A single ledger row has exactly one `type`, so "direct AND override"
+// is matched as either type ($in) — the dashboard shows both income streams together.
+async function getWithdrawableIncome(userId, month) {
+  const key = parseMonthParam(month);
+  const variants = monthKeyVariants(key);
+  const types = [INCOME_TYPES.DIRECT, INCOME_TYPES.OVERRIDE];
+  const beneficiaryUserId = new mongoose.Types.ObjectId(userId);
+
+  const ledgerMatch = {
+    beneficiaryUserId,
+    type: { $in: types },
+    monthKey: { $in: variants },
+  };
+
+  const [entries, withdrawals] = await Promise.all([
+    IncomeLedger.find(ledgerMatch)
+      .select('amount type level sourceUserId cycleId note monthKey createdAt')
+      .sort({ createdAt: -1 })
+      .lean(),
+    Withdrawal.find({
+      userId: beneficiaryUserId,
+      monthKey: { $in: variants },
+      incomeType: { $in: types },
+      status: { $ne: WITHDRAWAL_STATUS.REJECTED },
+    }).lean(),
+  ]);
+
+  const totals = {
+    direct: { amount: 0, count: 0, withdrawnAmount: 0, claimableAmount: 0 },
+    override: { amount: 0, count: 0, withdrawnAmount: 0, claimableAmount: 0 },
+    combined: { amount: 0, count: 0 },
+  };
+
+  for (const entry of entries) {
+    const bucket = totals[entry.type];
+    if (!bucket) continue;
+    bucket.amount += entry.amount || 0;
+    bucket.count += 1;
+    totals.combined.amount += entry.amount || 0;
+    totals.combined.count += 1;
+  }
+
+  for (const w of withdrawals) {
+    const bucket = totals[w.incomeType];
+    if (!bucket) continue;
+    bucket.withdrawnAmount += w.approvedAmount || 0;
+  }
+
+  for (const type of types) {
+    totals[type].claimableAmount = Math.max(totals[type].amount - totals[type].withdrawnAmount, 0);
+  }
+
+  return {
+    monthKey: key,
+    totals,
+    entries,
+    withdrawals,
   };
 }
 
@@ -155,4 +223,11 @@ async function creditOverrideOnRoi({ roiBeneficiaryUser, roiAmount, session }) {
   }
 }
 
-module.exports = { creditIncome, creditDirectCommission, creditOverrideOnRoi, monthKey, getMonthlyRoi };
+module.exports = {
+  creditIncome,
+  creditDirectCommission,
+  creditOverrideOnRoi,
+  monthKey,
+  getMonthlyRoi,
+  getWithdrawableIncome,
+};
