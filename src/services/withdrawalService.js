@@ -154,7 +154,7 @@ const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
 
   let payout;
   try {
-    payout = await withdrawFromDepositContract({ to: user.walletAddress, payoutAmountFinal });
+    payout = await withdrawFromDepositContract({ to: user.walletAddress,amount: payoutAmountFinal });
   } catch (err) {
     withdrawal.status = WITHDRAWAL_STATUS.REJECTED;
     withdrawal.rejectionReason = err.message;
