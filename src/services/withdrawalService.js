@@ -97,17 +97,19 @@ async function withdrawRoiForMonth(userId, monthKey) {
   return { monthKey, roiTotal, withdrawnAmount: amount, entries, withdrawal };
 }
 
-async function withdrawRoiViaContract(userId, { walletAddress, amount, type, monthKey }) {
+async function withdrawViaContract(userId, { walletAddress, amount, type, monthKey }) {
+  const SUPPORTED = [INCOME_TYPES.ROI, INCOME_TYPES.DIRECT, INCOME_TYPES.OVERRIDE];
+  if (!SUPPORTED.includes(type)) {
+    throw new ApiError(400, 'Unsupported income type', 'INVALID_INCOME_TYPE');
+  }
 
-const adminFee = Number(((amount * 5) / 100).toFixed(8));
-const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
-
-
-
+  // Admin fee: ROI is charged 5%; direct/override are fee-exempt (user gets the full amount).
+  const noFee = type === INCOME_TYPES.DIRECT || type === INCOME_TYPES.OVERRIDE;
+  const adminFee = noFee ? 0 : Number(((amount * 5) / 100).toFixed(8));
+  const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
 
   const user = await User.findById(userId);
   if (!user || !user.isActive) throw new ApiError(400, 'User not active', 'USER_INACTIVE');
-  if (type !== INCOME_TYPES.ROI) throw new ApiError(400, 'Only ROI withdrawals are supported', 'INVALID_INCOME_TYPE');
   if (walletAddress.toLowerCase() !== user.walletAddress) {
     throw new ApiError(403, 'Wallet address does not match authenticated user', 'WALLET_MISMATCH');
   }
@@ -119,23 +121,23 @@ const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
 
   const existing = await Withdrawal.findOne({
     userId: user._id,
-    incomeType: INCOME_TYPES.ROI,
+    incomeType: type,
     monthKey,
     status: { $ne: WITHDRAWAL_STATUS.REJECTED },
   });
   if (existing) {
-    throw new ApiError(409, 'ROI for this month already withdrawn', 'ROI_MONTH_ALREADY_WITHDRAWN');
+    throw new ApiError(409, `${type} for this month already withdrawn`, 'INCOME_MONTH_ALREADY_WITHDRAWN');
   }
 
   const variants = monthKeyVariants(monthKey);
   const agg = await IncomeLedger.aggregate([
-    { $match: { beneficiaryUserId: user._id, type: INCOME_TYPES.ROI, monthKey: { $in: variants } } },
+    { $match: { beneficiaryUserId: user._id, type, monthKey: { $in: variants } } },
     { $group: { _id: null, total: { $sum: '$amount' } } },
   ]);
-  const roiTotal = agg[0]?.total || 0;
-  if (roiTotal <= 0) throw new ApiError(400, 'No ROI for this month', 'NO_ROI_FOR_MONTH');
-  if (amount > roiTotal) {
-    throw new ApiError(400, 'Requested amount exceeds available ROI', 'AMOUNT_EXCEEDS_ROI');
+  const incomeTotal = agg[0]?.total || 0;
+  if (incomeTotal <= 0) throw new ApiError(400, `No ${type} income for this month`, 'NO_INCOME_FOR_MONTH');
+  if (amount > incomeTotal) {
+    throw new ApiError(400, 'Requested amount exceeds available income', 'AMOUNT_EXCEEDS_INCOME');
   }
 
   const remainingCap = Math.max(cycle.incomeCap - cycle.totalEarned, 0);
@@ -148,7 +150,7 @@ const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
     requestedAmount: payoutAmountFinal,
     approvedAmount: payoutAmountFinal,
     status: WITHDRAWAL_STATUS.APPROVED,
-    incomeType: INCOME_TYPES.ROI,
+    incomeType: type,
     monthKey,
   });
 
@@ -172,10 +174,10 @@ const payoutAmountFinal = Number((amount - adminFee).toFixed(8));
     action: 'withdrawal.contract_paid',
     entity: 'Withdrawal',
     entityId: String(withdrawal._id),
-    meta: { txHash: payout.txHash, monthKey, payoutAmountFinal },
+    meta: { txHash: payout.txHash, monthKey, type, payoutAmountFinal },
   });
 
-  return { monthKey, roiTotal, withdrawnAmount: payoutAmountFinal, txHash: payout.txHash, withdrawal };
+  return { monthKey, type, incomeTotal, withdrawnAmount: payoutAmountFinal, txHash: payout.txHash, withdrawal };
 }
 
 async function payWithdrawal(withdrawalId, actorUserId) {
@@ -202,4 +204,4 @@ async function payWithdrawal(withdrawalId, actorUserId) {
   return withdrawal;
 }
 
-module.exports = { requestWithdrawal, withdrawRoiForMonth, withdrawRoiViaContract, payWithdrawal };
+module.exports = { requestWithdrawal, withdrawRoiForMonth, withdrawViaContract, payWithdrawal };

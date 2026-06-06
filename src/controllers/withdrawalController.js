@@ -4,7 +4,7 @@ const Withdrawal = require('../models/Withdrawal');
 const {
   requestWithdrawal,
   withdrawRoiForMonth,
-  withdrawRoiViaContract,
+  withdrawViaContract,
   payWithdrawal,
 } = require('../services/withdrawalService');
 
@@ -23,7 +23,7 @@ const contractSchema = Joi.object({
     .pattern(/^0x[a-fA-F0-9]{40}$/)
     .required(),
   amount: Joi.number().positive().required(),
-  type: Joi.string().valid('roi').required(),
+  type: Joi.string().valid('roi', 'direct', 'override').required(),
   monthKey: Joi.string()
     .pattern(/^\d{4}-(0[1-9]|1[0-2])$/)
     .required(),
@@ -41,9 +41,9 @@ const withdrawRoi = asyncHandler(async (req, res) => {
   res.status(201).json({ ok: true, data });
 });
 
-const withdrawRoiContract = asyncHandler(async (req, res) => {
+const withdrawContract = asyncHandler(async (req, res) => {
   const body = await contractSchema.validateAsync(req.body);
-  const data = await withdrawRoiViaContract(req.user.sub, body);
+  const data = await withdrawViaContract(req.user.sub, body);
   res.status(201).json({ ok: true, data });
 });
 
@@ -57,4 +57,4 @@ const pay = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
-module.exports = { request, withdrawRoi, withdrawRoiContract, listMine, pay };
+module.exports = { request, withdrawRoi, withdrawContract, listMine, pay };
