@@ -1,11 +1,13 @@
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose');
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
 const { getKpis, getConfig, updateConfig } = require('../services/adminService');
 const { getIncomeOverview, getMonthlyUserIncome } = require('../services/systemIncomeService');
+const { getWithdrawableIncome } = require('../services/incomeService');
 const { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys } = require('../services/syncService');
 const { logAudit } = require('../services/auditService');
 const SyncBatch = require('../models/SyncBatch');
@@ -155,6 +157,24 @@ const monthlyUserIncome = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+const adminWithdrawableIncomeSchema = Joi.object({
+  password: Joi.string().required(),
+  month: Joi.string().required(),
+});
+
+const adminWithdrawableIncome = asyncHandler(async (req, res) => {
+  const { password, month } = await adminWithdrawableIncomeSchema.validateAsync(req.query);
+  if (password !== env.virtualDepositPassword) {
+    throw new ApiError(401, 'Invalid password', 'INVALID_PASSWORD');
+  }
+  const { userId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, 'Invalid userId', 'INVALID_USER_ID');
+  }
+  const data = await getWithdrawableIncome(userId, month);
+  res.json({ ok: true, data });
+});
+
 const listSyncBatchesSchema = Joi.object({
   password: Joi.string().required(),
 });
@@ -202,5 +222,6 @@ module.exports = {
   listSyncBatches,
   incomeOverview,
   monthlyUserIncome,
+  adminWithdrawableIncome,
   fixLedgerMonthKeysHandler,
 };
