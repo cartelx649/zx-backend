@@ -26,4 +26,41 @@ async function getKpis() {
   };
 }
 
-module.exports = { getKpis, getConfig, updateConfig };
+// List cycles that have achieved 3x income (totalEarned >= incomeCap), one row per
+// cycle, joined with the user for the wallet address. Note: a cycle can close on the
+// 2x ROI cap or 1x direct+override cap without reaching 3x, so we filter strictly on
+// totalEarned >= incomeCap rather than on isActive.
+async function listCapReachedCycles({ limit, offset }) {
+  const match = { $expr: { $gte: ['$totalEarned', '$incomeCap'] } };
+  const [cycles, total] = await Promise.all([
+    Cycle.aggregate([
+      { $match: match },
+      { $sort: { closedAt: -1, updatedAt: -1 } },
+      { $skip: offset },
+      { $limit: limit },
+      { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'user' } },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 0,
+          cycleId: '$_id',
+          userId: 1,
+          walletAddress: '$user.walletAddress',
+          referralId: '$user.referralId',
+          cycleNumber: 1,
+          packageAmount: 1,
+          incomeCap: 1,
+          totalEarned: 1,
+          breakdown: { roi: '$earnedRoi', direct: '$earnedDirect', override: '$earnedOverride' },
+          isActive: 1,
+          startedAt: 1,
+          closedAt: 1,
+        },
+      },
+    ]),
+    Cycle.countDocuments(match),
+  ]);
+  return { meta: { total, limit, offset, count: cycles.length }, cycles };
+}
+
+module.exports = { getKpis, getConfig, updateConfig, listCapReachedCycles };

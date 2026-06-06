@@ -5,7 +5,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
-const { getKpis, getConfig, updateConfig } = require('../services/adminService');
+const { getKpis, getConfig, updateConfig, listCapReachedCycles } = require('../services/adminService');
 const { getIncomeOverview, getMonthlyUserIncome } = require('../services/systemIncomeService');
 const { getWithdrawableIncome, getAllUsersWithdrawableIncome } = require('../services/incomeService');
 const { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys } = require('../services/syncService');
@@ -184,6 +184,21 @@ const adminAllUsersWithdrawableIncome = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+const capReachedCyclesSchema = Joi.object({
+  password: Joi.string().required(),
+  limit: Joi.number().integer().min(1).max(1000).default(100),
+  offset: Joi.number().integer().min(0).default(0),
+});
+
+const capReachedCycles = asyncHandler(async (req, res) => {
+  const { password, limit, offset } = await capReachedCyclesSchema.validateAsync(req.query);
+  if (password !== env.virtualDepositPassword) {
+    throw new ApiError(401, 'Invalid password', 'INVALID_PASSWORD');
+  }
+  const data = await listCapReachedCycles({ limit, offset });
+  res.json({ ok: true, data });
+});
+
 const listSyncBatchesSchema = Joi.object({
   password: Joi.string().required(),
 });
@@ -233,5 +248,6 @@ module.exports = {
   monthlyUserIncome,
   adminWithdrawableIncome,
   adminAllUsersWithdrawableIncome,
+  capReachedCycles,
   fixLedgerMonthKeysHandler,
 };
