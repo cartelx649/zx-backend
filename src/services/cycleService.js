@@ -2,7 +2,6 @@ const mongoose = require('mongoose');
 const Cycle = require('../models/Cycle');
 const User = require('../models/User');
 const { CAP_MULTIPLIER, ROI_MULTIPLIER, DIRECT_LEVEL_MULTIPLIER } = require('../config/constants');
-const ApiError = require('../utils/ApiError');
 
 async function getActiveCycle(userId) {
   return Cycle.findOne({ userId, isActive: true });
@@ -11,7 +10,16 @@ async function getActiveCycle(userId) {
 async function createCycleForDeposit(user, packageAmount, session) {
   const active = await getActiveCycle(user._id);
   if (active) {
-    throw new ApiError(400, 'Active cycle already exists', 'ACTIVE_CYCLE_EXISTS');
+    // Same-cycle re-top-up: grow package + caps cumulatively, keep earned progress.
+    // The 1x direct/override cap is derived from packageAmount in applyIncomeToCycle,
+    // and monthly ROI re-resolves its slab from packageAmount, so both scale for free.
+    active.packageAmount += packageAmount;
+    active.roiTarget = active.packageAmount * ROI_MULTIPLIER;
+    active.incomeCap = active.packageAmount * CAP_MULTIPLIER;
+    await active.save({ session });
+    user.totalDeposited += packageAmount;
+    await user.save({ session });
+    return { cycle: active, isTopup: true };
   }
   const nextCycleNumber = user.currentCycleNumber + 1;
   const cycle = await Cycle.create(
@@ -30,7 +38,7 @@ async function createCycleForDeposit(user, packageAmount, session) {
   user.isActive = true;
   user.totalDeposited += packageAmount;
   await user.save({ session });
-  return cycle[0];
+  return { cycle: cycle[0], isTopup: false };
 }
 
 async function applyIncomeToCycle(cycleId, incomeType, amount, session = null) {

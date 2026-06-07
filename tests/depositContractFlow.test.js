@@ -63,7 +63,7 @@ describe('Deposit smart contract integration', () => {
 
     const cycleService = require('../src/services/cycleService');
     cycleService.withMongoTransaction.mockImplementation(async (work) => work({}));
-    cycleService.createCycleForDeposit.mockResolvedValue({ _id: 'cycle1' });
+    cycleService.createCycleForDeposit.mockResolvedValue({ cycle: { _id: 'cycle1' }, isTopup: false });
 
     const Deposit = require('../src/models/Deposit');
     Deposit.create.mockResolvedValue([{ _id: 'dep1' }]);

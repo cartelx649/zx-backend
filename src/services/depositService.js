@@ -47,7 +47,7 @@ async function resolveSponsorAndValidate({ user, sponsorWalletAddress, amount })
 
 async function persistVerifiedDeposit({ user, amount, txHash, slab }) {
   return withMongoTransaction(async (session) => {
-    const cycle = await createCycleForDeposit(user, amount, session);
+    const { cycle, isTopup } = await createCycleForDeposit(user, amount, session);
     const deposit = await Deposit.create(
       [
         {
@@ -76,7 +76,7 @@ async function persistVerifiedDeposit({ user, amount, txHash, slab }) {
         session,
       });
     }
-    return { cycle, deposit: deposit[0] };
+    return { cycle, deposit: deposit[0], isTopup };
   });
 }
 
