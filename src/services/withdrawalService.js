@@ -28,6 +28,10 @@ async function requestWithdrawal(userId, requestedAmount) {
   if (!user || !user.isActive) throw new ApiError(400, 'User not active', 'USER_INACTIVE');
   const cycle = await getActiveCycle(user._id);
   if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
+  const config = await getConfig();
+  if (!isWithdrawalWindowOpen(config.withdrawalWindow)) {
+    throw new ApiError(400, 'Withdrawal window is closed', 'WITHDRAWAL_WINDOW_CLOSED');
+  }
   const remainingCap = Math.max(cycle.incomeCap - cycle.totalEarned, 0);
   const amount = Math.min(requestedAmount, remainingCap);
   if (amount <= 0) throw new ApiError(400, 'Cap reached. Re-topup required.', 'CAP_REACHED');
@@ -95,7 +99,7 @@ async function withdrawRoiForMonth(userId, monthKey) {
 }
 
 async function withdrawViaContract(userId, { walletAddress, amount, type, monthKey }) {
-  const SUPPORTED = [INCOME_TYPES.DIRECT, INCOME_TYPES.OVERRIDE];
+  const SUPPORTED = [INCOME_TYPES.ROI, INCOME_TYPES.DIRECT, INCOME_TYPES.OVERRIDE];
   if (!SUPPORTED.includes(type)) {
     throw new ApiError(400, 'Unsupported income type', 'INVALID_INCOME_TYPE');
   }
