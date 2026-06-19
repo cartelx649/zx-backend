@@ -25,7 +25,7 @@ const contractSchema = Joi.object({
     .pattern(/^0x[a-fA-F0-9]{40}$/)
     .required(),
   amount: Joi.number().positive().required(),
-  type: Joi.string().valid('roi', 'direct', 'override').required(),
+  type: Joi.string().valid('direct', 'override').required(),
   monthKey: Joi.string()
     .pattern(/^\d{4}-(0[1-9]|1[0-2])$/)
     .required(),
