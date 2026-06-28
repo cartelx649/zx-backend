@@ -7,6 +7,19 @@ const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { generateReferralId } = require('../utils/referralId');
 
+function desiredRoleForWallet(walletAddress) {
+  return walletAddress === env.adminWallet ? 'admin' : 'user';
+}
+
+async function syncUserRoleForWallet(user, walletAddress) {
+  const nextRole = desiredRoleForWallet(walletAddress);
+  if (user.role !== nextRole) {
+    user.role = nextRole;
+    await user.save();
+  }
+  return user;
+}
+
 async function createNonce(walletAddress) {
   const nonce = crypto.randomBytes(16).toString('hex');
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -35,8 +48,10 @@ async function verifySignatureAndLogin({ walletAddress, signature, sponsorWallet
       walletAddress: normalizedWallet,
       sponsorWalletAddress: sponsorWalletAddress?.toLowerCase() || null,
       referralId: generateReferralId(),
-      role: normalizedWallet === env.adminWallet ? 'admin' : 'user',
+      role: desiredRoleForWallet(normalizedWallet),
     });
+  } else {
+    user = await syncUserRoleForWallet(user, normalizedWallet);
   }
   const token = jwt.sign(
     { sub: String(user._id), role: user.role, walletAddress: user.walletAddress },
@@ -55,8 +70,10 @@ async function backendLogin({ walletAddress, sponsorWalletAddress }) {
       walletAddress: normalizedWallet,
       sponsorWalletAddress: sponsorWalletAddress?.toLowerCase() || null,
       referralId: generateReferralId(),
-      role: normalizedWallet === env.adminWallet ? 'admin' : 'user',
+      role: desiredRoleForWallet(normalizedWallet),
     });
+  } else {
+    user = await syncUserRoleForWallet(user, normalizedWallet);
   }
   const token = jwt.sign(
     { sub: String(user._id), role: user.role, walletAddress: user.walletAddress },
