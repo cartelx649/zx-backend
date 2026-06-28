@@ -13,6 +13,7 @@ const {
   adminWithdrawableIncome,
   adminAllUsersWithdrawableIncome,
   capReachedCycles,
+  cycleProgress,
   fixLedgerMonthKeysHandler,
 } = require('../controllers/adminController');
 
@@ -30,6 +31,7 @@ router.get('/monthly-user-income', monthlyUserIncome);
 router.get('/income/withdrawable', adminAllUsersWithdrawableIncome);
 router.get('/users/:userId/income/withdrawable', adminWithdrawableIncome);
 router.get('/cycles/cap-reached', capReachedCycles);
+router.get('/cycles/progress', auth('admin'), cycleProgress);
 router.post('/fix-ledger-monthkeys', fixLedgerMonthKeysHandler);
 
 module.exports = router;

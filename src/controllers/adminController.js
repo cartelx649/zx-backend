@@ -5,7 +5,13 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const env = require('../config/env');
-const { getKpis, getConfig, updateConfig, listCapReachedCycles } = require('../services/adminService');
+const {
+  getKpis,
+  getConfig,
+  updateConfig,
+  listCapReachedCycles,
+  listUserCycleProgress,
+} = require('../services/adminService');
 const { getIncomeOverview, getMonthlyUserIncome } = require('../services/systemIncomeService');
 const { getWithdrawableIncome, getAllUsersWithdrawableIncome } = require('../services/incomeService');
 const { syncFromDataJson, unsyncBatch, fixLedgerMonthKeys } = require('../services/syncService');
@@ -199,6 +205,20 @@ const capReachedCycles = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+const cycleProgressSchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(500).default(200),
+  offset: Joi.number().integer().min(0).default(0),
+  status: Joi.string()
+    .valid('all', 'attention', 'active', 'inactive', 'roi_reached', 'cap_reached')
+    .default('all'),
+});
+
+const cycleProgress = asyncHandler(async (req, res) => {
+  const { limit, offset, status } = await cycleProgressSchema.validateAsync(req.query);
+  const data = await listUserCycleProgress({ limit, offset, status });
+  res.json({ ok: true, data });
+});
+
 const listSyncBatchesSchema = Joi.object({
   password: Joi.string().required(),
 });
@@ -249,5 +269,6 @@ module.exports = {
   adminWithdrawableIncome,
   adminAllUsersWithdrawableIncome,
   capReachedCycles,
+  cycleProgress,
   fixLedgerMonthKeysHandler,
 };
