@@ -35,6 +35,8 @@ const updateConfigSchema = Joi.object({
     isOpen: Joi.boolean().required(),
   }),
   emergencyPause: Joi.boolean(),
+  roiWithdrawPaused: Joi.boolean(),
+  incomeWithdrawPaused: Joi.boolean(),
 }).min(1);
 
 const kpis = asyncHandler(async (req, res) => {

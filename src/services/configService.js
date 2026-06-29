@@ -31,6 +31,8 @@ const DEFAULT_CONFIG = {
   ],
   withdrawalWindow: { dayOfMonth: 4, isOpen: true },
   emergencyPause: false,
+  roiWithdrawPaused: false,
+  incomeWithdrawPaused: false,
 };
 
 async function getConfig() {
@@ -38,7 +40,7 @@ async function getConfig() {
   if (!config) {
     config = await AdminConfig.create({ key: 'global', value: DEFAULT_CONFIG });
   }
-  return config.value;
+  return { ...DEFAULT_CONFIG, ...(config.value || {}) };
 }
 
 async function updateConfig(partial) {

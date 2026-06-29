@@ -23,12 +23,22 @@ function isWithdrawalWindowOpen(windowConfig) {
   return now.getUTCDate() === windowConfig.dayOfMonth;
 }
 
+function assertWithdrawNotPaused(config, type) {
+  if (type === INCOME_TYPES.ROI && config?.roiWithdrawPaused) {
+    throw new ApiError(423, 'ROI withdrawals are paused by admin', 'ROI_WITHDRAW_PAUSED');
+  }
+  if ((type === INCOME_TYPES.DIRECT || type === INCOME_TYPES.OVERRIDE) && config?.incomeWithdrawPaused) {
+    throw new ApiError(423, 'Income withdrawals are paused by admin', 'INCOME_WITHDRAW_PAUSED');
+  }
+}
+
 async function requestWithdrawal(userId, requestedAmount) {
   const user = await User.findById(userId);
   if (!user || !user.isActive) throw new ApiError(400, 'User not active', 'USER_INACTIVE');
   const cycle = await getActiveCycle(user._id);
   if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
   const config = await getConfig();
+  assertWithdrawNotPaused(config, INCOME_TYPES.ROI);
   if (!isWithdrawalWindowOpen(config.withdrawalWindow)) {
     throw new ApiError(400, 'Withdrawal window is closed', 'WITHDRAWAL_WINDOW_CLOSED');
   }
@@ -51,6 +61,7 @@ async function withdrawRoiForMonth(userId, monthKey) {
   const cycle = await getActiveCycle(user._id);
   if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
   const config = await getConfig();
+  assertWithdrawNotPaused(config, INCOME_TYPES.ROI);
   if (!isWithdrawalWindowOpen(config.withdrawalWindow)) {
     throw new ApiError(400, 'Withdrawal window is closed', 'WITHDRAWAL_WINDOW_CLOSED');
   }
@@ -117,6 +128,8 @@ async function withdrawViaContract(userId, { walletAddress, amount, type, monthK
 
   const cycle = await getActiveCycle(user._id);
   if (!cycle) throw new ApiError(400, 'No active cycle', 'NO_ACTIVE_CYCLE');
+  const config = await getConfig();
+  assertWithdrawNotPaused(config, type);
   // Note: the day-of-month withdrawal window is intentionally not enforced for the
   // contract-based withdrawal endpoint; it can be called any day.
 

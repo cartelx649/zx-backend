@@ -124,6 +124,10 @@ async function getDashboard(userId) {
       isOpen: config.withdrawalWindow.isOpen,
       isOpenNow: isWindowOpenNow(config.withdrawalWindow),
     },
+    withdrawalControls: {
+      roiPaused: Boolean(config.roiWithdrawPaused),
+      incomePaused: Boolean(config.incomeWithdrawPaused),
+    },
   };
 }
 
