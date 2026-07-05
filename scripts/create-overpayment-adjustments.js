@@ -143,6 +143,45 @@ async function main() {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    const expectedKeys = new Set(
+      adjustments.map((adjustment) =>
+        [
+          String(adjustment.beneficiaryUserId),
+          String(adjustment.sourceUserId),
+          String(adjustment.cycleId),
+          adjustment.type,
+          String(adjustment.level),
+          adjustment.monthKey,
+        ].join('|')
+      )
+    );
+
+    const existingAdjustments = await IncomeLedger.find({
+      monthKey: args.targetMonth,
+      note: {
+        $in: [
+          `Admin adjustment for overpaid ROI from ${args.sourceMonth}`,
+          `Admin adjustment for overpaid level income from ${args.sourceMonth}`,
+        ],
+      },
+    })
+      .session(session)
+      .lean();
+
+    for (const existing of existingAdjustments) {
+      const key = [
+        String(existing.beneficiaryUserId),
+        String(existing.sourceUserId),
+        String(existing.cycleId),
+        existing.type,
+        String(existing.level || 0),
+        existing.monthKey,
+      ].join('|');
+      if (!expectedKeys.has(key)) {
+        await IncomeLedger.deleteOne({ _id: existing._id }, { session });
+      }
+    }
+
     for (const adjustment of adjustments) {
       await IncomeLedger.findOneAndUpdate(
         {
