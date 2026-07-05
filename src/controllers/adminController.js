@@ -170,8 +170,37 @@ function currentUtcMonthKey(date = new Date()) {
 }
 
 const currentMonthIncome = asyncHandler(async (req, res) => {
-  const data = await getMonthlyUserIncome({ month: currentUtcMonthKey() });
-  res.json({ ok: true, data });
+  const month = currentUtcMonthKey();
+  const [monthlyIncome, withdrawableIncome] = await Promise.all([
+    getMonthlyUserIncome({ month }),
+    getAllUsersWithdrawableIncome(month),
+  ]);
+
+  const direct = withdrawableIncome.systemTotals.direct;
+  const level = withdrawableIncome.systemTotals.override;
+  const directClaimable = Math.max((direct.amount || 0) - (direct.withdrawnAmount || 0), 0);
+  const levelClaimable = Math.max((level.amount || 0) - (level.withdrawnAmount || 0), 0);
+
+  res.json({
+    ok: true,
+    data: {
+      meta: monthlyIncome.meta,
+      roi: {
+        gross: monthlyIncome.systemTotals.roi,
+      },
+      income: {
+        directGross: direct.amount || 0,
+        directWithdrawn: direct.withdrawnAmount || 0,
+        directClaimable,
+        levelGross: level.amount || 0,
+        levelWithdrawn: level.withdrawnAmount || 0,
+        levelClaimable,
+        gross: (direct.amount || 0) + (level.amount || 0),
+        withdrawn: (direct.withdrawnAmount || 0) + (level.withdrawnAmount || 0),
+        claimable: directClaimable + levelClaimable,
+      },
+    },
+  });
 });
 
 const adminWithdrawableIncomeSchema = Joi.object({
