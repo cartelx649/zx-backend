@@ -165,6 +165,15 @@ const monthlyUserIncome = asyncHandler(async (req, res) => {
   res.json({ ok: true, data });
 });
 
+function currentUtcMonthKey(date = new Date()) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+const currentMonthIncome = asyncHandler(async (req, res) => {
+  const data = await getMonthlyUserIncome({ month: currentUtcMonthKey() });
+  res.json({ ok: true, data });
+});
+
 const adminWithdrawableIncomeSchema = Joi.object({
   password: Joi.string().required(),
   month: Joi.string().required(),
@@ -268,6 +277,7 @@ module.exports = {
   listSyncBatches,
   incomeOverview,
   monthlyUserIncome,
+  currentMonthIncome,
   adminWithdrawableIncome,
   adminAllUsersWithdrawableIncome,
   capReachedCycles,

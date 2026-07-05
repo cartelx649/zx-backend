@@ -21,7 +21,7 @@ const MONTH_NAMES = {
 };
 
 function round2(value) {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Math.round((value + Number.EPSILON) * 1_000_000_000_000) / 1_000_000_000_000;
 }
 
 function emptyByType() {
