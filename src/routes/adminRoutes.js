@@ -10,6 +10,7 @@ const {
   listSyncBatches,
   incomeOverview,
   monthlyUserIncome,
+  currentMonthIncome,
   adminWithdrawableIncome,
   adminAllUsersWithdrawableIncome,
   capReachedCycles,
@@ -28,6 +29,7 @@ router.post('/unsync-roi-report', unsyncRoiReport);
 router.get('/sync-batches', listSyncBatches);
 router.get('/income-overview', incomeOverview);
 router.get('/monthly-user-income', monthlyUserIncome);
+router.get('/current-month-income', auth('admin'), currentMonthIncome);
 router.get('/income/withdrawable', adminAllUsersWithdrawableIncome);
 router.get('/users/:userId/income/withdrawable', adminWithdrawableIncome);
 router.get('/cycles/cap-reached', capReachedCycles);
