@@ -22,7 +22,7 @@ describe('previousCalendarMonthPeriod', () => {
 });
 
 describe('calculateProratedMonthlyRoi', () => {
-  test('credits only the active days when a cycle starts mid-month', () => {
+  test('starts monthly ROI from the next day when a cycle starts mid-month', () => {
     const period = previousCalendarMonthPeriod(new Date('2026-07-05T00:00:00Z'));
     const amount = calculateProratedMonthlyRoi({
       cycle: { packageAmount: 1000 },
@@ -31,22 +31,22 @@ describe('calculateProratedMonthlyRoi', () => {
       period,
     });
 
-    expect(amount).toBeCloseTo(26, 8); // 1000 * 6% * (13 / 30)
+    expect(amount).toBeCloseTo(24, 8); // 1000 * 6% * (12 / 30)
   });
 
-  test('prorates a mid-month top-up using the package active during each segment', () => {
+  test('prorates a mid-month top-up by its own slab from the next day', () => {
     const period = previousCalendarMonthPeriod(new Date('2026-07-05T00:00:00Z'));
     const amount = calculateProratedMonthlyRoi({
-      cycle: { packageAmount: 200 },
+      cycle: { packageAmount: 2000 },
       deposits: [
-        deposit(100, '2026-05-20T10:00:00Z'),
-        deposit(100, '2026-06-16T10:00:00Z'),
+        deposit(1500, '2026-05-20T10:00:00Z'),
+        deposit(500, '2026-06-18T10:00:00Z'),
       ],
       roiSlabs: ROI_SLABS,
       period,
     });
 
-    expect(amount).toBeCloseTo(7.5, 8); // 15 days on 100 + 15 days on 200 at 5%
+    expect(amount).toBeCloseTo(100, 8); // 1500*6% + 500*5%*(12/30)
   });
 
   test('returns full monthly ROI when the package was active before the period started', () => {

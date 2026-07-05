@@ -40,6 +40,12 @@ function resolveRoiSlab(packageAmount, roiSlabs) {
   );
 }
 
+function roiAccrualStartForDeposit(depositDate, periodStart) {
+  const depositDay = startOfUtcDay(new Date(depositDate));
+  if (depositDay < periodStart) return periodStart;
+  return startOfUtcDay(addUtcDays(depositDay, 1));
+}
+
 function round8(value) {
   return Math.round((value + Number.EPSILON) * 100000000) / 100000000;
 }
@@ -49,48 +55,18 @@ function calculateProratedMonthlyRoi({ cycle, deposits, roiSlabs, period }) {
     .filter((deposit) => deposit?.createdAt && deposit.status === 'verified' && deposit.createdAt <= period.end)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  let packageAtPeriodStart = 0;
-  const eventAmountsByDay = new Map();
-
-  for (const deposit of relevantDeposits) {
-    const depositDay = startOfUtcDay(new Date(deposit.createdAt));
-    if (depositDay < period.start) {
-      packageAtPeriodStart += deposit.amount || 0;
-      continue;
-    }
-    if (depositDay > period.end) continue;
-    const key = depositDay.toISOString();
-    eventAmountsByDay.set(key, (eventAmountsByDay.get(key) || 0) + (deposit.amount || 0));
-  }
-
-  const eventDays = Array.from(eventAmountsByDay.keys())
-    .map((iso) => new Date(iso))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  let currentPackage = packageAtPeriodStart;
-  let cursor = period.start;
   let totalRoi = 0;
 
-  for (const eventDay of eventDays) {
-    const segmentEnd = addUtcDays(eventDay, -1);
-    if (currentPackage > 0 && cursor <= segmentEnd) {
-      const slab = resolveRoiSlab(currentPackage, roiSlabs);
-      if (slab) {
-        const daysActive = inclusiveUtcDayCount(cursor, segmentEnd);
-        totalRoi += ((currentPackage * slab.monthlyPercent) / 100) * (daysActive / period.daysInMonth);
-      }
-    }
-
-    currentPackage += eventAmountsByDay.get(eventDay.toISOString()) || 0;
-    cursor = eventDay;
-  }
-
-  if (currentPackage > 0 && cursor <= period.end) {
-    const slab = resolveRoiSlab(currentPackage, roiSlabs);
-    if (slab) {
-      const daysActive = inclusiveUtcDayCount(cursor, period.end);
-      totalRoi += ((currentPackage * slab.monthlyPercent) / 100) * (daysActive / period.daysInMonth);
-    }
+  for (const deposit of relevantDeposits) {
+    const amount = deposit.amount || 0;
+    if (amount <= 0) continue;
+    const slab = resolveRoiSlab(amount, roiSlabs);
+    if (!slab) continue;
+    const accrualStart = roiAccrualStartForDeposit(deposit.createdAt, period.start);
+    if (accrualStart > period.end) continue;
+    const daysActive = inclusiveUtcDayCount(accrualStart, period.end);
+    if (daysActive <= 0) continue;
+    totalRoi += ((amount * slab.monthlyPercent) / 100) * (daysActive / period.daysInMonth);
   }
 
   return round8(totalRoi);

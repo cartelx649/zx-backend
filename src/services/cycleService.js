@@ -11,8 +11,8 @@ async function createCycleForDeposit(user, packageAmount, session) {
   const active = await getActiveCycle(user._id);
   if (active) {
     // Same-cycle re-top-up: grow package + caps cumulatively, keep earned progress.
-    // The 1x direct/override cap is derived from packageAmount in applyIncomeToCycle,
-    // and monthly ROI re-resolves its slab from packageAmount, so both scale for free.
+    // The 1x direct/override cap is derived from packageAmount in applyIncomeToCycle.
+    // Monthly ROI is computed from the deposit history, so top-ups keep their own slab timing.
     active.packageAmount += packageAmount;
     active.roiTarget = active.packageAmount * ROI_MULTIPLIER;
     active.incomeCap = active.packageAmount * CAP_MULTIPLIER;
