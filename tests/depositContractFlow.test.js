@@ -39,12 +39,19 @@ describe('Deposit smart contract integration', () => {
         _id: 'user1',
         walletAddress: '0x2222222222222222222222222222222222222222',
         sponsorWalletAddress: null,
+        save: jest.fn().mockResolvedValue(undefined),
+      }),
+      findOne: jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue({ _id: 'sponsor1' }),
       }),
     }));
     jest.doMock('../src/models/Cycle', () => ({
       findOne: jest.fn().mockReturnValue({ sort: jest.fn().mockResolvedValue(null) }),
     }));
-    jest.doMock('../src/models/Deposit', () => ({ create: jest.fn() }));
+    jest.doMock('../src/models/Deposit', () => ({
+      create: jest.fn(),
+      findOne: jest.fn().mockReturnValue({ select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue(null) }) }),
+    }));
     jest.doMock('../src/services/configService', () => ({
       getConfig: jest.fn().mockResolvedValue({
         emergencyPause: false,
@@ -69,12 +76,78 @@ describe('Deposit smart contract integration', () => {
     Deposit.create.mockResolvedValue([{ _id: 'dep1' }]);
 
     const { verifyAndRecordDeposit } = require('../src/services/depositService');
-    await verifyAndRecordDeposit({ userId: 'user1', txHash: '0xabc', amount: 100 });
+    await verifyAndRecordDeposit({
+      userId: 'user1',
+      txHash: '0xabc',
+      amount: 100,
+      sponsorWalletAddress: '0x3333333333333333333333333333333333333333',
+    });
 
     expect(verifyUsdtDeposit).toHaveBeenCalledWith(
       expect.objectContaining({
         expectedTo: '0x1111111111111111111111111111111111111111',
       })
     );
+  });
+
+  test('synced closed cycles can re-topup from the slab minimum', async () => {
+    process.env = {
+      ...originalEnv,
+      DEPOSIT_CONTRACT_ADDRESS: '0x1111111111111111111111111111111111111111',
+    };
+
+    jest.doMock('../src/models/User', () => ({
+      findById: jest.fn().mockResolvedValue({
+        _id: 'user1',
+        walletAddress: '0x2222222222222222222222222222222222222222',
+        sponsorWalletAddress: '0x3333333333333333333333333333333333333333',
+      }),
+      findOne: jest.fn().mockReturnValue({
+        session: jest.fn().mockResolvedValue({ _id: 'sponsor1' }),
+      }),
+    }));
+    jest.doMock('../src/models/Cycle', () => ({
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockResolvedValue({
+          _id: 'cycle1',
+          userId: 'user1',
+          packageAmount: 5444.037304,
+          isActive: false,
+        }),
+      }),
+    }));
+    jest.doMock('../src/models/Deposit', () => ({
+      create: jest.fn().mockResolvedValue([{ _id: 'dep1' }]),
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue({ _id: 'dep-synced' }),
+        }),
+      }),
+    }));
+    jest.doMock('../src/services/configService', () => ({
+      getConfig: jest.fn().mockResolvedValue({
+        emergencyPause: false,
+        roiSlabs: [
+          { name: 's1', min: 1, max: 500, monthlyPercent: 5 },
+          { name: 's2', min: 501, max: 2000, monthlyPercent: 6 },
+          { name: 's3', min: 2001, max: 5000, monthlyPercent: 7 },
+          { name: 's4', min: 5001, max: null, monthlyPercent: 8 },
+        ],
+      }),
+    }));
+    const verifyUsdtDeposit = jest.fn().mockResolvedValue({ confirmations: 8 });
+    jest.doMock('../src/services/blockchainService', () => ({ verifyUsdtDeposit }));
+    jest.doMock('../src/services/cycleService', () => ({
+      createCycleForDeposit: jest.fn().mockResolvedValue({ cycle: { _id: 'cycle2' }, isTopup: false }),
+      withMongoTransaction: jest.fn().mockImplementation(async (work) => work({})),
+    }));
+    jest.doMock('../src/services/incomeService', () => ({
+      creditDirectCommission: jest.fn(),
+    }));
+
+    const { verifyAndRecordDeposit } = require('../src/services/depositService');
+    await expect(
+      verifyAndRecordDeposit({ userId: 'user1', txHash: '0xabc', amount: 5001 })
+    ).resolves.toBeTruthy();
   });
 });

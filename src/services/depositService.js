@@ -13,6 +13,20 @@ function resolveRoiSlab(amount, roiSlabs) {
   return roiSlabs.find((slab) => amount >= slab.min && (slab.max === null || amount <= slab.max));
 }
 
+async function resolveRetopupMinimum(previousCycle, roiSlabs) {
+  const syncedDeposit = await Deposit.findOne({
+    cycleId: previousCycle._id,
+    txHash: { $regex: /^synced-/ },
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  if (!syncedDeposit) return previousCycle.packageAmount;
+
+  const previousSlab = resolveRoiSlab(previousCycle.packageAmount, roiSlabs);
+  return previousSlab?.min || previousCycle.packageAmount;
+}
+
 async function resolveSponsorAndValidate({ user, sponsorWalletAddress, amount }) {
   if (!user.sponsorWalletAddress) {
     if (!sponsorWalletAddress) {
@@ -35,10 +49,14 @@ async function resolveSponsorAndValidate({ user, sponsorWalletAddress, amount })
   if (!slab) throw new ApiError(400, 'Package amount does not match any ROI slab', 'INVALID_PACKAGE');
 
   const previousCycle = await Cycle.findOne({ userId: user._id }).sort({ cycleNumber: -1 });
-  if (previousCycle && !previousCycle.isActive && amount < previousCycle.packageAmount) {
+  const minimumRetopupAmount =
+    previousCycle && !previousCycle.isActive
+      ? await resolveRetopupMinimum(previousCycle, config.roiSlabs)
+      : 0;
+  if (previousCycle && !previousCycle.isActive && amount < minimumRetopupAmount) {
     throw new ApiError(
       400,
-      'Re-topup must be same or higher than previous package',
+      `Re-topup must be at least ${minimumRetopupAmount} USDT`,
       'INVALID_RETOPUP_AMOUNT'
     );
   }
@@ -106,4 +124,4 @@ async function recordVirtualDeposit({ userId, amount, sponsorWalletAddress }) {
   return persistVerifiedDeposit({ user, amount, txHash, slab });
 }
 
-module.exports = { verifyAndRecordDeposit, recordVirtualDeposit, resolveRoiSlab };
+module.exports = { verifyAndRecordDeposit, recordVirtualDeposit, resolveRoiSlab, resolveRetopupMinimum };
