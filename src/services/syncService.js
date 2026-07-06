@@ -12,7 +12,6 @@ const { withMongoTransaction } = require('./cycleService');
 const {
   ROI_MULTIPLIER,
   CAP_MULTIPLIER,
-  DIRECT_LEVEL_MULTIPLIER,
   INCOME_TYPES,
 } = require('../config/constants');
 
@@ -125,7 +124,6 @@ async function syncFromDataJson(data, opts = {}) {
     const packageAmount = row.deposited;
     const roiTarget = packageAmount * ROI_MULTIPLIER;
     const incomeCap = packageAmount * CAP_MULTIPLIER;
-    const directLevelCap = packageAmount * DIRECT_LEVEL_MULTIPLIER;
 
     const earnedRoi = row.roiAccrued;
     const earnedDirect = row.referralRewards;
@@ -141,17 +139,6 @@ async function syncFromDataJson(data, opts = {}) {
       });
       logger.warn(`[sync] ROI over-cap for ${row.address}: ${earnedRoi} > ${roiTarget}`);
     }
-    if (earnedDirect + earnedOverride > directLevelCap) {
-      stats.overCapWarnings.push({
-        address: row.address,
-        kind: 'directLevel',
-        expected: directLevelCap,
-        actual: earnedDirect + earnedOverride,
-      });
-      logger.warn(
-        `[sync] direct+level over-cap for ${row.address}: ${earnedDirect + earnedOverride} > ${directLevelCap}`
-      );
-    }
     if (totalEarned > incomeCap) {
       stats.overCapWarnings.push({
         address: row.address,
@@ -161,11 +148,9 @@ async function syncFromDataJson(data, opts = {}) {
       });
       logger.warn(`[sync] total over-cap for ${row.address}: ${totalEarned} > ${incomeCap}`);
     }
-
     const roiSaturated = earnedRoi >= roiTarget;
-    const directLevelSaturated = earnedDirect + earnedOverride >= directLevelCap;
     const totalSaturated = totalEarned >= incomeCap;
-    const isActive = !(roiSaturated || directLevelSaturated || totalSaturated);
+    const isActive = !(roiSaturated || totalSaturated);
 
     await upsertTracked(
       Cycle,

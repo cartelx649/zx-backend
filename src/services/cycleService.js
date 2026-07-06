@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Cycle = require('../models/Cycle');
 const User = require('../models/User');
-const { CAP_MULTIPLIER, ROI_MULTIPLIER, DIRECT_LEVEL_MULTIPLIER } = require('../config/constants');
+const { CAP_MULTIPLIER, ROI_MULTIPLIER } = require('../config/constants');
 
 async function getActiveCycle(userId) {
   return Cycle.findOne({ userId, isActive: true });
@@ -11,7 +11,6 @@ async function createCycleForDeposit(user, packageAmount, session) {
   const active = await getActiveCycle(user._id);
   if (active) {
     // Same-cycle re-top-up: grow package + caps cumulatively, keep earned progress.
-    // The 1x direct/override cap is derived from packageAmount in applyIncomeToCycle.
     // Monthly ROI is computed from the deposit history, so top-ups keep their own slab timing.
     active.packageAmount += packageAmount;
     active.roiTarget = active.packageAmount * ROI_MULTIPLIER;
@@ -49,9 +48,6 @@ async function applyIncomeToCycle(cycleId, incomeType, amount, session = null) {
   let remainingType = remainingTotal;
   if (incomeType === 'roi') {
     remainingType = Math.max(cycle.roiTarget - cycle.earnedRoi, 0);
-  } else if (incomeType === 'direct' || incomeType === 'override') {
-    const directLevelCap = cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER;
-    remainingType = Math.max(directLevelCap - (cycle.earnedDirect + cycle.earnedOverride), 0);
   }
   const remainingCap = Math.min(remainingTotal, remainingType);
   const creditedAmount = Math.max(0, Math.min(amount, remainingCap));
@@ -62,11 +58,9 @@ async function applyIncomeToCycle(cycleId, incomeType, amount, session = null) {
   if (incomeType === 'override') cycle.earnedOverride += creditedAmount;
   cycle.totalEarned = cycle.earnedRoi + cycle.earnedDirect + cycle.earnedOverride;
 
-  const directLevelCap = cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER;
   const roiSaturated = cycle.earnedRoi >= cycle.roiTarget;
-  const directLevelSaturated = cycle.earnedDirect + cycle.earnedOverride >= directLevelCap;
   const totalSaturated = cycle.totalEarned >= cycle.incomeCap;
-  if (roiSaturated || directLevelSaturated || totalSaturated) {
+  if (roiSaturated || totalSaturated) {
     cycle.isActive = false;
     cycle.closedAt = new Date();
     await User.findByIdAndUpdate(cycle.userId, { isActive: false }, { session });

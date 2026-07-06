@@ -30,7 +30,7 @@ describe('calculateProjection', () => {
     // Level: override % applied to monthly ROI (0.10)
     expect(result.level.breakdown).toHaveLength(3);
     expect(result.level.breakdown[0]).toMatchObject({ level: 1, percent: 10, monthlyAmount: 0.01 });
-    expect(result.level.directLevelCap).toBe(2);
+    expect(result.level.note).toContain('3x total cap');
   });
 
   test('selects the correct slab for higher amounts', () => {

@@ -245,7 +245,7 @@ describe('syncService.syncFromDataJson', () => {
     );
   });
 
-  test('records over-cap warning and closes cycle when direct+level exceeds 1× cap', async () => {
+  test('keeps cycle active when direct income exceeds package but total is still under 3×', async () => {
     const addr = '0xffffffffffffffffffffffffffffffffffffffff';
     const userDocs = [{ _id: 'u1', walletAddress: addr }];
     const cycleDocs = [{ _id: 'c1', userId: 'u1' }];
@@ -268,18 +268,13 @@ describe('syncService.syncFromDataJson', () => {
       { logger: { warn: warnSpy, log: () => {} } }
     );
 
-    expect(stats.overCapWarnings).toContainEqual({
-      address: addr,
-      kind: 'directLevel',
-      expected: 204,
-      actual: 313,
-    });
-    expect(warnSpy).toHaveBeenCalled();
+    expect(stats.overCapWarnings).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
 
     const cycleSet = mocks.cycleFindOneAndUpdate.mock.calls[0][1].$set;
     expect(cycleSet.earnedDirect).toBe(313);
-    expect(cycleSet.isActive).toBe(false);
-    expect(cycleSet.closedAt).toBeInstanceOf(Date);
+    expect(cycleSet.isActive).toBe(true);
+    expect(cycleSet.closedAt).toBeNull();
   });
 
   test('keeps cycle active when earnings are well under all caps', async () => {

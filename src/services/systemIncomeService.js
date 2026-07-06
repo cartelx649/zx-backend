@@ -6,7 +6,6 @@ const ApiError = require('../utils/ApiError');
 const { getConfig } = require('./configService');
 const { resolveRoiSlab } = require('./depositService');
 const {
-  DIRECT_LEVEL_MULTIPLIER,
   MAX_OVERRIDE_LEVELS,
   INCOME_TYPES,
   WITHDRAWAL_STATUS,
@@ -128,17 +127,14 @@ function futureMonthKey(base, offset) {
 
 /**
  * Clamp + apply an income credit to a simulated cycle, mirroring
- * cycleService.applyIncomeToCycle (caps + saturation/closure) exactly.
+ * cycleService.applyIncomeToCycle (2x ROI / 3x total caps) exactly.
  */
 function applyCapToSim(sim, type, amount) {
   if (!sim.isActive) return 0;
   const remainingTotal = Math.max(sim.incomeCap - sim.totalEarned, 0);
-  const directLevelCap = sim.packageAmount * DIRECT_LEVEL_MULTIPLIER;
   let remainingType = remainingTotal;
   if (type === INCOME_TYPES.ROI) {
     remainingType = Math.max(sim.roiTarget - sim.earnedRoi, 0);
-  } else if (type === INCOME_TYPES.DIRECT || type === INCOME_TYPES.OVERRIDE) {
-    remainingType = Math.max(directLevelCap - (sim.earnedDirect + sim.earnedOverride), 0);
   }
   const remainingCap = Math.min(remainingTotal, remainingType);
   const credited = Math.max(0, Math.min(amount, remainingCap));
@@ -148,11 +144,10 @@ function applyCapToSim(sim, type, amount) {
   if (type === INCOME_TYPES.DIRECT) sim.earnedDirect += credited;
   if (type === INCOME_TYPES.OVERRIDE) sim.earnedOverride += credited;
   sim.totalEarned = sim.earnedRoi + sim.earnedDirect + sim.earnedOverride;
-
   const roiSaturated = sim.earnedRoi >= sim.roiTarget;
-  const directLevelSaturated = sim.earnedDirect + sim.earnedOverride >= directLevelCap;
+  const roiSaturated = sim.earnedRoi >= sim.roiTarget;
   const totalSaturated = sim.totalEarned >= sim.incomeCap;
-  if (roiSaturated || directLevelSaturated || totalSaturated) sim.isActive = false;
+  if (roiSaturated || totalSaturated) sim.isActive = false;
   return credited;
 }
 
@@ -238,7 +233,7 @@ function runOneMonth(state, config) {
 function projectionNotes() {
   return [
     'Direct commission is one-time at deposit; existing cycles accrue no future direct income, so projected direct is 0.',
-    'Projection respects ROI cap (2x), per-cycle direct+override cap (1x package), and total cap (3x).',
+    'Projection respects the 2x ROI cap and 3x total cap for each cycle.',
   ];
 }
 

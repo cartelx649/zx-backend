@@ -27,9 +27,9 @@ async function getKpis() {
 }
 
 // List cycles that have achieved 3x income (totalEarned >= incomeCap), one row per
-// cycle, joined with the user for the wallet address. Note: a cycle can close on the
-// 2x ROI cap or 1x direct+override cap without reaching 3x, so we filter strictly on
-// totalEarned >= incomeCap rather than on isActive.
+// cycle, joined with the user for the wallet address. A cycle can also close on the
+// 2x ROI cap before reaching 3x, so we filter strictly on totalEarned >= incomeCap
+// rather than on isActive.
 async function listCapReachedCycles({ limit, offset }) {
   const match = { $expr: { $gte: ['$totalEarned', '$incomeCap'] } };
   const [cycles, total] = await Promise.all([

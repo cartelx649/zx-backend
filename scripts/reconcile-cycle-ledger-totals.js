@@ -9,7 +9,6 @@ const IncomeLedger = require('../src/models/IncomeLedger');
 const {
   ROI_MULTIPLIER,
   CAP_MULTIPLIER,
-  DIRECT_LEVEL_MULTIPLIER,
 } = require('../src/config/constants');
 
 function round8(value) {
@@ -47,10 +46,8 @@ async function main() {
     const totalEarned = round8(sums.roi + sums.direct + sums.override);
     const roiTarget = cycle.roiTarget || cycle.packageAmount * ROI_MULTIPLIER;
     const incomeCap = cycle.incomeCap || cycle.packageAmount * CAP_MULTIPLIER;
-    const directLevelCap = cycle.packageAmount * DIRECT_LEVEL_MULTIPLIER;
     const isActive = !(
       sums.roi >= roiTarget ||
-      sums.direct + sums.override >= directLevelCap ||
       totalEarned >= incomeCap
     );
 

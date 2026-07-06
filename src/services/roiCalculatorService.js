@@ -4,7 +4,6 @@ const { resolveRoiSlab } = require('./depositService');
 const {
   ROI_MULTIPLIER,
   CAP_MULTIPLIER,
-  DIRECT_LEVEL_MULTIPLIER,
   DIRECT_COMMISSION_PERCENT,
 } = require('../config/constants');
 
@@ -38,7 +37,6 @@ function calculateProjection(amount, config) {
   const monthsToCompleteRoi = monthlyRoi > 0 ? Math.ceil(roiTarget / monthlyRoi) : null;
 
   const directCommission = (amount * DIRECT_COMMISSION_PERCENT) / 100;
-  const directLevelCap = amount * DIRECT_LEVEL_MULTIPLIER;
 
   // Override paid to each upline level per monthly ROI credit of this deposit.
   const levels = config.overridePercentages
@@ -69,10 +67,9 @@ function calculateProjection(amount, config) {
       note: 'One-time commission paid to the direct sponsor when this deposit is made',
     },
     level: {
-      directLevelCap: round2(directLevelCap),
       totalMonthlyLevelIncome,
       breakdown: levels,
-      note: 'Override income each upline level earns per monthly ROI credit of this deposit (capped 1x with direct)',
+      note: 'Override income each upline level earns per monthly ROI credit of this deposit while the depositor stays under the 3x total cap',
     },
   };
 }

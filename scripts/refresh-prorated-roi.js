@@ -127,7 +127,6 @@ async function main() {
       totalEarned,
       isActive:
         earnedRoi < cycle.roiTarget &&
-        earnedDirect + earnedOverride < cycle.packageAmount &&
         totalEarned < cycle.incomeCap,
     };
     simByUserId.set(state.userId, state);
@@ -264,10 +263,9 @@ async function main() {
     }
 
     for (const state of simByUserId.values()) {
-      const directLevelCapReached = state.earnedDirect + state.earnedOverride >= state.packageAmount;
       const roiCapReached = state.earnedRoi >= state.roiTarget;
       const totalCapReached = state.totalEarned >= state.incomeCap;
-      const isActive = !(directLevelCapReached || roiCapReached || totalCapReached);
+      const isActive = !(roiCapReached || totalCapReached);
       await Cycle.updateOne(
         { _id: state.cycleId },
         {
