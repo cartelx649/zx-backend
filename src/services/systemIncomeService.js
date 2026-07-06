@@ -145,7 +145,6 @@ function applyCapToSim(sim, type, amount) {
   if (type === INCOME_TYPES.OVERRIDE) sim.earnedOverride += credited;
   sim.totalEarned = sim.earnedRoi + sim.earnedDirect + sim.earnedOverride;
   const roiSaturated = sim.earnedRoi >= sim.roiTarget;
-  const roiSaturated = sim.earnedRoi >= sim.roiTarget;
   const totalSaturated = sim.totalEarned >= sim.incomeCap;
   if (roiSaturated || totalSaturated) sim.isActive = false;
   return credited;
